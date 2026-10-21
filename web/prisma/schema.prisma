@@ -1,0 +1,192 @@
+// Database schema, from docs/erd.dbml.
+// SQLite for development; the same schema works with PostgreSQL (change the provider and DATABASE_URL).
+// String fields hold small fixed vocabularies (role, level, status...). They are validated in code,
+// which keeps the schema portable between SQLite and PostgreSQL. All times are UTC.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  role      String // nurse / family / admin
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  contacts       PatientContact[]
+  acknowledged   Alert[]          @relation("AcknowledgedBy")
+  notifications  Notification[]
+  audioReminders AudioReminder[]
+
+  @@map("users")
+}
+
+model Zone {
+  id       Int    @id @default(autoincrement())
+  zoneName String @unique // room or hallway, matches room_id in events (R-204, H-2)
+
+  patients   Patient[]
+  detections Detection[]
+
+  @@map("zones")
+}
+
+model MobilityAid {
+  id   Int    @id @default(autoincrement())
+  name String @unique // none / cane / crutches / walker / wheelchair
+
+  reidProfiles  ReidProfile[]
+  prescriptions Prescription[]
+  detections    Detection[]
+
+  @@map("mobility_aids")
+}
+
+model Patient {
+  id           Int       @id @default(autoincrement())
+  code         String    @unique // reference used in events, for example P-0042
+  name         String
+  initials     String // shown in push notifications instead of the full name
+  age          Int?
+  zoneId       Int? // main room (administrative data)
+  status       String    @default("active") // active / discharged
+  dischargedAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  zone           Zone?            @relation(fields: [zoneId], references: [id])
+  reidProfiles   ReidProfile[]
+  contacts       PatientContact[]
+  prescriptions  Prescription[]
+  detections     Detection[]
+  alerts         Alert[]
+  audioReminders AudioReminder[]
+
+  @@map("patients")
+}
+
+model ReidProfile {
+  id            Int      @id @default(autoincrement())
+  patientId     Int
+  mobilityAidId Int? // aid state of the sample (per-aid ReID models)
+  isAssisted    Boolean  @default(false) // sample recorded with a helper
+  embeddingRef  String // encrypted embedding or sample location. Biometric data.
+  createdAt     DateTime @default(now())
+
+  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  mobilityAid MobilityAid? @relation(fields: [mobilityAidId], references: [id])
+
+  @@map("reid_profiles")
+}
+
+model PatientContact {
+  id        Int    @id @default(autoincrement())
+  patientId Int
+  userId    Int
+  type      String // nurse / family
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([patientId, userId])
+  @@map("patient_contacts")
+}
+
+model Prescription {
+  id            Int       @id @default(autoincrement())
+  patientId     Int
+  mobilityAidId Int
+  validFrom     DateTime  @default(now())
+  validTo       DateTime? // null = current prescription
+
+  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  mobilityAid MobilityAid @relation(fields: [mobilityAidId], references: [id])
+
+  @@index([patientId, validTo])
+  @@map("prescriptions")
+}
+
+model Detection {
+  id                 Int      @id @default(autoincrement())
+  eventId            String   @unique // uuid from the model output; makes intake idempotent
+  eventType          String // detection / fall_indication
+  personTrackId      String
+  roomId             String // room_id exactly as received in the event
+  zoneId             Int? // matched zone, if the room is known
+  patientId          Int? // ReID result. null for unknown staff or visitors
+  identityConfidence Float
+  mobilityAidId      Int? // detected aid, if the label is known
+  aidLabel           String // detected aid label exactly as received
+  aidConfidence      Float
+  modelVersion       String?
+  activityState      String? // stretch: walking / standing / sitting / stationary
+  needsReview        Boolean  @default(false) // low confidence: no alert, flagged for manual review
+  timestamp          DateTime
+  receivedAt         DateTime @default(now())
+
+  zone        Zone?        @relation(fields: [zoneId], references: [id])
+  patient     Patient?     @relation(fields: [patientId], references: [id])
+  mobilityAid MobilityAid? @relation(fields: [mobilityAidId], references: [id])
+  alerts      Alert[]
+
+  @@index([timestamp])
+  @@index([patientId, timestamp])
+  @@map("detections")
+}
+
+model Alert {
+  id                Int       @id @default(autoincrement())
+  patientId         Int
+  detectionId       Int
+  level             String // info / warning / escalated / emergency
+  status            String    @default("pending") // pending / acknowledged / closed
+  createdAt         DateTime  @default(now())
+  ackDeadline       DateTime? // an unacknowledged warning escalates after this time
+  escalatedAt       DateTime?
+  reminderTriggered Boolean   @default(false) // stretch: audio reminder already played
+  acknowledgedById  Int?
+  acknowledgedAt    DateTime?
+
+  patient        Patient        @relation(fields: [patientId], references: [id])
+  detection      Detection      @relation(fields: [detectionId], references: [id])
+  acknowledgedBy User?          @relation("AcknowledgedBy", fields: [acknowledgedById], references: [id])
+  notifications  Notification[]
+
+  @@index([status, level])
+  @@map("alerts")
+}
+
+model Notification {
+  id            Int       @id @default(autoincrement())
+  alertId       Int
+  userId        Int // recipient
+  channel       String // pushover / web_push / sms / email
+  status        String    @default("queued") // queued / sent / failed
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime?
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+model AudioReminder {
+  id        Int     @id @default(autoincrement())
+  patientId Int
+  userId    Int // family member or nurse who recorded the message
+  audioUrl  String
+  isActive  Boolean @default(true)
+
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@map("audio_reminders")
+}

@@ -1,18 +1,31 @@
-# Web application (not scaffolded yet)
+# Web application
 
-Planned stack (see `docs/decisions.md`): Next.js with TypeScript, Prisma, PostgreSQL, Tailwind with shadcn/ui, Auth.js for login, Zod for validation (derived from the event schema), Docker Compose for a local database. Notification channels go through an adapter interface (Pushover first).
+Next.js (App Router, TypeScript, Tailwind) with Prisma and SQLite for development. See `docs/decisions.md` for the reasons behind each choice.
 
-## To scaffold
-Run from PowerShell in this folder (not from WSL, so `node_modules` stays one platform):
+## Current state
+- Next.js scaffolded (`create-next-app`, `src/` layout, import alias `@/*`).
+- Database schema in `prisma/schema.prisma` (from `docs/erd.dbml`), first migration applied, seed script with **fake** data (3 users, 2 patients, 5 aids, 3 rooms).
+- Not built yet: login and roles, intake endpoint, compliance engine, dashboard.
 
+## Run it (PowerShell, in this folder, not WSL)
 ```
-npx create-next-app@latest . --typescript --tailwind --eslint --app
+npm install
+copy .env.example .env
+npx prisma migrate dev      # creates the SQLite database and the Prisma client
+npx prisma db seed          # loads the fake example data
+npm run dev                 # http://localhost:3000
 ```
+Useful: `npx prisma studio` opens a browser view of the database.
 
-Then add Prisma and the database schema from the ERD (`docs/`), authentication with roles, the intake endpoint, and the compliance engine with unit tests.
+## Notes
+- **Prisma is pinned to 6.x** (`prisma` and `@prisma/client`), which is stable and simple with SQLite. Moving to PostgreSQL later means changing the provider in `schema.prisma` and `DATABASE_URL`.
+- The generated Prisma client (`src/generated/`) and the local database (`*.db`) are git-ignored, so run `npx prisma migrate dev` after cloning.
+- Fixed vocabularies (role, level, status) are plain strings in the schema and are validated in code, to keep SQLite and PostgreSQL both working.
+- `npm audit` reports high-severity warnings in the lint tooling chain (`eslint-config-next`). They are in development tools only. Do not run `npm audit fix --force`: it would downgrade the toolchain.
+- Run `npm` and `node` from Windows only, not from WSL, so `node_modules` stays one platform.
 
 ## Rules
 - Fake example data only. No real patient names.
-- Secrets in `.env` (git-ignored); keep a `.env.example` with names only.
+- Secrets in `.env` (git-ignored); `.env.example` has names only.
 - Check roles on the server, not only in the UI.
 - Store each event before attempting any notification.

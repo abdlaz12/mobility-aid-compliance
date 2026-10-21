@@ -21,6 +21,7 @@ Table MOBILITY_AIDS {
 
 Table PATIENTS {
   id int [pk]
+  code string [unique, note: 'Reference used in events, for example P-0042']
   name string
   initials string [note: 'shown in push notifications instead of the full name (Section 3.3)']
   age int
@@ -62,10 +63,12 @@ Table DETECTIONS {
   event_id string [unique, note: 'uuid from the model output']
   event_type string [note: 'detection / fall_indication']
   person_track_id string
-  zone_id int [note: 'Room where the sensor captured the detection']
+  room_id string [note: 'room_id exactly as received in the event']
+  zone_id int [note: 'Matched zone, if the room is known']
   patient_id int [note: 'ReID result. NULL for unknown staff or visitors']
   identity_confidence float
-  mobility_aid_id int [note: 'Detected aid']
+  mobility_aid_id int [note: 'Detected aid, if the label is known']
+  aid_label string [note: 'Detected aid label exactly as received']
   aid_confidence float
   model_version string
   activity_state string [note: 'Stretch S2, optional: walking / standing / sitting / stationary']

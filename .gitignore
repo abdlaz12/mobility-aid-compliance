@@ -1,0 +1,40 @@
+# Data and outputs: never commit participant data, point clouds or results
+data/
+output/
+outputs/
+models/
+*.npz
+*.pcd
+*.bin
+*.pcap
+*.pth
+*.pt
+*.ckpt
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+coverage/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Logs and OS files
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,124 @@
+// Database design (revised). Paste into dbdiagram.io to view or export an image.
+
+Table USERS {
+  id int [pk]
+  name string
+  email string [unique]
+  role string [note: 'nurse / family / admin']
+  is_active boolean
+  created_at datetime
+}
+
+Table ZONES {
+  id int [pk]
+  zone_name string [note: 'Room 301 / Hallway']
+}
+
+Table MOBILITY_AIDS {
+  id int [pk]
+  name string [note: 'none / cane / crutches / walker / wheelchair']
+}
+
+Table PATIENTS {
+  id int [pk]
+  name string
+  initials string [note: 'shown in push notifications instead of the full name (Section 3.3)']
+  age int
+  zone_id int [note: 'Patient main room (administrative data)']
+  status string [note: 'active / discharged']
+  discharged_at datetime
+  created_at datetime
+}
+
+Table REID_PROFILES {
+  id int [pk]
+  patient_id int
+  mobility_aid_id int [note: 'Aid state of the sample (per-aid ReID models)']
+  is_assisted boolean [note: 'Sample recorded with a helper (Section 4.3)']
+  embedding_ref string [note: 'Encrypted embedding or sample location. Biometric data (Section 7)']
+  created_at datetime
+}
+
+Table PATIENT_CONTACTS {
+  id int [pk]
+  patient_id int
+  user_id int
+  type string [note: 'nurse / family']
+  indexes {
+    (patient_id, user_id) [unique]
+  }
+}
+
+Table PRESCRIPTIONS {
+  id int [pk]
+  patient_id int
+  mobility_aid_id int
+  valid_from datetime
+  valid_to datetime [note: 'NULL = current prescription']
+}
+
+Table DETECTIONS {
+  id int [pk]
+  event_id string [unique, note: 'uuid from the model output']
+  event_type string [note: 'detection / fall_indication']
+  person_track_id string
+  zone_id int [note: 'Room where the sensor captured the detection']
+  patient_id int [note: 'ReID result. NULL for unknown staff or visitors']
+  identity_confidence float
+  mobility_aid_id int [note: 'Detected aid']
+  aid_confidence float
+  model_version string
+  activity_state string [note: 'Stretch S2, optional: walking / standing / sitting / stationary']
+  needs_review boolean [note: 'Low confidence: no alert, flagged for manual review (FR3.2)']
+  timestamp datetime
+}
+
+Table ALERTS {
+  id int [pk]
+  patient_id int
+  detection_id int
+  level string [note: 'info / warning / escalated / emergency']
+  status string [note: 'pending / acknowledged / closed']
+  created_at datetime
+  ack_deadline datetime [note: 'An unacknowledged warning escalates after this time (FR5.4)']
+  escalated_at datetime
+  reminder_triggered boolean [note: 'Stretch S4: audio reminder already played']
+  acknowledged_by int [note: 'User who responded']
+  acknowledged_at datetime
+}
+
+Table NOTIFICATIONS {
+  id int [pk]
+  alert_id int
+  user_id int [note: 'Recipient']
+  channel string [note: 'pushover / web_push / sms / email']
+  status string [note: 'queued / sent / failed']
+  attempts int
+  last_attempt_at datetime
+}
+
+Table AUDIO_REMINDERS {
+  id int [pk]
+  patient_id int
+  user_id int [note: 'Family member or nurse who recorded the message']
+  audio_url string
+  is_active boolean
+}
+
+Ref: ZONES.id < PATIENTS.zone_id
+Ref: PATIENTS.id < REID_PROFILES.patient_id
+Ref: MOBILITY_AIDS.id < REID_PROFILES.mobility_aid_id
+Ref: USERS.id < PATIENT_CONTACTS.user_id
+Ref: PATIENTS.id < PATIENT_CONTACTS.patient_id
+Ref: PATIENTS.id < PRESCRIPTIONS.patient_id
+Ref: MOBILITY_AIDS.id < PRESCRIPTIONS.mobility_aid_id
+Ref: PATIENTS.id < DETECTIONS.patient_id
+Ref: ZONES.id < DETECTIONS.zone_id
+Ref: MOBILITY_AIDS.id < DETECTIONS.mobility_aid_id
+Ref: PATIENTS.id < ALERTS.patient_id
+Ref: DETECTIONS.id < ALERTS.detection_id
+Ref: USERS.id < ALERTS.acknowledged_by
+Ref: ALERTS.id < NOTIFICATIONS.alert_id
+Ref: USERS.id < NOTIFICATIONS.user_id
+Ref: PATIENTS.id < AUDIO_REMINDERS.patient_id
+Ref: USERS.id < AUDIO_REMINDERS.user_id

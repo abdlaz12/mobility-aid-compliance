@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { checkBearerKey } from "@/lib/api-key";
 import { validateDetectionEvent } from "@/lib/detection-validator";
 import { processDetection } from "@/lib/detection-intake";
+import { handle } from "@/lib/http";
+import { listReviewQueue, requireApiUser } from "@/lib/dal";
 
 /** POST /api/detections: receives one detection event (docs/api.md). */
 export async function POST(request: Request) {
@@ -35,4 +37,15 @@ export async function POST(request: Request) {
     },
     { status: r.created ? 201 : 200 },
   );
+}
+
+/** GET /api/detections?needs_review=true: the review queue (admin, nurse). Session login, not the API key. */
+export async function GET(request: Request) {
+  const needsReview = new URL(request.url).searchParams.get("needs_review") === "true";
+  return handle(async () => {
+    const user = await requireApiUser();
+    // Only the review queue is exposed for now; other listings would need their own scope rules.
+    if (!needsReview) return { detections: [] };
+    return { detections: await listReviewQueue(user) };
+  });
 }

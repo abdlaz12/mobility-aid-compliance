@@ -65,3 +65,12 @@ test("web copy of the contract equals contracts/ at the repo root", () => {
   const b = readFileSync(new URL("../contracts/detection-event.schema.json", import.meta.url), "utf8");
   assert.equal(b, a, "run `npm run sync-contract`");
 });
+
+import { hashPassword, verifyPassword } from "./password";
+test("password hashing: right password verifies, wrong one and bad formats do not", async () => {
+  const h = await hashPassword("correct horse");
+  assert.equal(await verifyPassword("correct horse", h), true);
+  assert.equal(await verifyPassword("wrong", h), false);
+  assert.notEqual(h, await hashPassword("correct horse"), "salted: same password, different hash");
+  for (const bad of [null, undefined, "", "plain", "scrypt:only-two", "bcrypt:a:b"]) assert.equal(await verifyPassword("x", bad), false);
+});

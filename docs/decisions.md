@@ -20,8 +20,12 @@ Short record of decisions and the reason for each. Date format YYYY-MM-DD.
 | 2026-10-21 | Patients have a **`code`** (for example P-0042); detections keep the raw **`room_id`** and **`aid_label`** from the event | Events refer to patients by code and to rooms and aids by label. Keeping the raw values means nothing is lost when a room or label is not yet in the database. |
 | 2026-10-21 | Participant point clouds stay on **lab-controlled Carleton storage**; DRAC only for public or synthetic data | The Calcul Québec terms exclude sensitive information on Narval. To be confirmed with the advisor and the REB protocol. |
 
+| 2026-11-13 | **Auth.js (next-auth v5 beta) with email and password**, JWT session of 8 hours | The candidate named in the open decisions. v5 is the line that supports Next 16. Passwords hashed with scrypt from Node (no extra dependency). |
+| 2026-11-13 | **Role and patient scope enforced in one data access layer** (`web/src/lib/dal.ts`); the token holds identity only | Roles are read from the database on each request, so deactivation and reassignment apply at once (NFR2.3). Pages and API routes share the same functions, so they cannot disagree. |
+| 2026-11-13 | **Family does not see Info entries**; a nurse sees only assigned patients; low-confidence detections with an unmatched patient code are visible to admin only | Info is the silent log (FR4.1). Unmatched detections have no patient to scope by. |
+| 2026-11-13 | **Dashboard refreshes by polling every 15 s** until the real-time channel is decided | Keeps FR9.1 usable without the Socket.io or SSE decision. |
+
 ## Open decisions
 - **Real-time channel:** Socket.io on a separate small Node process, or Server-Sent Events. Next.js API routes usually cannot hold long-lived WebSocket connections.
 - **Aid label set:** to be taken from the Kirkby classification classes.
-- **Authentication library:** Auth.js is the current candidate.
 - **Hosting of the web system:** same Carleton server as inference, or a separate host.

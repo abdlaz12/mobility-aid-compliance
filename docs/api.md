@@ -4,7 +4,7 @@ Status: draft for Sprint 1. Request and response bodies for the intake follow `c
 
 ## Authentication
 - **Model service to intake:** a shared API key in the `Authorization: Bearer <key>` header. The key lives in an environment variable, never in the repository.
-- **Users (dashboard):** session login. Every endpoint checks the user's role on the **server** (admin, nurse, family). Unauthorised access returns 403.
+- **Users (dashboard):** session login (Auth.js, cookie). Every endpoint checks the user's role and patient scope on the **server** (admin, nurse, family). No session returns **401**, a role or patient not allowed returns **403**, a missing alert **404**, an alert that is not pending **409**.
 
 ## Detection intake
 ### `POST /api/detections`
@@ -44,6 +44,9 @@ WebSocket (Socket.io), events pushed to the open dashboard:
 - `detection.review` (new item in the review queue)
 
 Clients only receive events for patients they are allowed to see.
+
+## Implemented so far
+`POST /api/detections`, `GET /api/detections?needs_review=true`, `GET /api/patients`, `GET /api/alerts`, `GET /api/alerts/{id}`, `POST /api/alerts/{id}/acknowledge`. Not yet: patient create, update, prescriptions and contacts (admin), real-time updates.
 
 ## Open questions
 - Exact label set of the aid classifier (from the Kirkby models).

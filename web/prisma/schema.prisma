@@ -14,12 +14,13 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  role      String // nurse / family / admin
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  role         String // nurse / family / admin
+  passwordHash String? // scrypt hash (see src/lib/password.ts). null = cannot log in.
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
 
   contacts       PatientContact[]
   acknowledged   Alert[]          @relation("AcknowledgedBy")

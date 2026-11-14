@@ -7,6 +7,8 @@ export type ComplianceInput = {
   eventType: "detection" | "fall_indication";
   /** The patient was matched in the database. */
   patientKnown: boolean;
+  /** The patient is still admitted (not discharged). */
+  patientActive: boolean;
   /** ReID returned a patient code (null = unknown person, staff or visitor). */
   identified: boolean;
   identityConfidence: number;
@@ -35,6 +37,10 @@ export function evaluateDetection(i: ComplianceInput, t: Thresholds): Compliance
   // A code the database does not know cannot be checked; a human should look.
   if (!i.patientKnown) {
     return { needsReview: true, alertLevel: null, reason: "patient code not in database" };
+  }
+  // A discharged patient is no longer monitored. The detection is still stored, history is kept.
+  if (!i.patientActive) {
+    return { needsReview: false, alertLevel: null, reason: "patient discharged" };
   }
   // FR4.3: a fall indication is an emergency for an identified patient.
   if (i.eventType === "fall_indication") {

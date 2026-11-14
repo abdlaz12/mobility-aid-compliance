@@ -31,6 +31,14 @@ async function login(email, password = PASSWORD) {
   return (path, init = {}) => fetch(`${BASE}${path}`, { ...init, headers: { ...init.headers, cookie: cookie() } });
 }
 
+const sendFull = (patient, aid) => fetch(`${BASE}/api/detections`, {
+  method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
+  body: JSON.stringify({
+    event_id: randomUUID(), timestamp: new Date().toISOString(), room_id: "R-204", person_track_id: "t-1",
+    identity: { patient_id: patient, confidence: 0.95 }, aid: { label: aid, confidence: 0.95 }, event_type: "detection",
+  }),
+}).then(async (r) => ({ status: r.status, alert: (await r.json()).alert_level ?? null }));
+
 const send = (patient, aid) => fetch(`${BASE}/api/detections`, {
   method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
   body: JSON.stringify({
@@ -57,11 +65,13 @@ try {
 
   console.log("# which patients each role sees");
   const pat = (g) => codes(g, "/api/patients", "patients", (p) => p.code);
-  check("admin sees all", await pat(admin), ["P-0042", "P-0043"]);
-  check("nurse (both patients)", await pat(nurse), ["P-0042", "P-0043"]);
-  check("nurse2 (P-0043 only)", await pat(nurse2), ["P-0043"]);
-  check("family (P-0042 only)", await pat(family), ["P-0042"]);
-  check("family2 (P-0043 only)", await pat(family2), ["P-0043"]);
+  // Earlier runs of this test leave their own patients behind, so the scope checks look at the seeded ones only.
+  const seeded = (list) => list.filter((c) => /^P-004[23]$/.test(c));
+  check("admin sees all", seeded(await pat(admin)), ["P-0042", "P-0043"]);
+  check("nurse (both patients)", seeded(await pat(nurse)), ["P-0042", "P-0043"]);
+  check("nurse2 (P-0043 only)", seeded(await pat(nurse2)), ["P-0043"]);
+  check("family (P-0042 only)", seeded(await pat(family)), ["P-0042"]);
+  check("family2 (P-0043 only)", seeded(await pat(family2)), ["P-0043"]);
 
   console.log("# fresh alerts");
   check("send noncompliant event for P-0042", await send("P-0042", "none"), 201);
@@ -71,7 +81,7 @@ try {
     return Math.max(...alerts.filter((a) => a.patient.code === code).map((a) => a.id));
   };
   const a42 = await latest("P-0042"), a43 = await latest("P-0043");
-  const alertPatients = (g) => codes(g, "/api/alerts?status=pending", "alerts", (a) => a.patient.code).then((l) => [...new Set(l)]);
+  const alertPatients = (g) => codes(g, "/api/alerts?status=pending", "alerts", (a) => a.patient.code).then((l) => seeded([...new Set(l)]));
   check("nurse2 sees only P-0043 alerts", await alertPatients(nurse2), ["P-0043"]);
   check("family sees only P-0042 alerts", await alertPatients(family), ["P-0042"]);
   check("family does not see the silent info log", (await codes(family, "/api/alerts", "alerts", (a) => a.level)).includes("info"), false);
@@ -102,6 +112,75 @@ try {
   const race = (await (await admin("/api/alerts?status=pending&level=warning")).json()).alerts.filter((a) => a.patient.code === "P-0042")[0].id;
   const results = (await Promise.all([ack(nurse, race), ack(admin, race)])).sort();
   check("simultaneous acknowledge: exactly one wins", results, [200, 409]);
+
+  console.log("# managing patients (admin only)");
+  const body = (o) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(o) });
+  const call = (g, path, method, o) => g(path, { method, ...body(o) });
+  const code = `T-${Date.now().toString(36).toUpperCase()}`;
+  const newPatient = { code, name: "Test Patient", age: "80", room: "R-204", aid: "cane" };
+  check("anonymous cannot create", (await anon("/api/patients", { method: "POST", ...body(newPatient) })).status, 401);
+  check("nurse cannot create", (await call(nurse, "/api/patients", "POST", newPatient)).status, 403);
+  check("family cannot create", (await call(family, "/api/patients", "POST", newPatient)).status, 403);
+  check("bad code is rejected", (await call(admin, "/api/patients", "POST", { ...newPatient, code: "x" })).status, 400);
+  check("script in code is rejected", (await call(admin, "/api/patients", "POST", { ...newPatient, code: "<script>" })).status, 400);
+  check("missing aid is rejected", (await call(admin, "/api/patients", "POST", { ...newPatient, aid: "" })).status, 400);
+  check("unknown aid is rejected", (await call(admin, "/api/patients", "POST", { ...newPatient, aid: "jetpack" })).status, 400);
+  check("body that is not an object", (await admin("/api/patients", { method: "POST", headers: { "Content-Type": "application/json" }, body: "[1]" })).status, 400);
+  const created = await call(admin, "/api/patients", "POST", newPatient);
+  check("admin creates a patient", created.status, 201);
+  const pid = (await created.json()).patient.id;
+  check("duplicate code conflicts", (await call(admin, "/api/patients", "POST", newPatient)).status, 409);
+  check("unassigned nurse does not see the new patient", (await pat(nurse2)).includes(code), false);
+
+  console.log("# reading one patient");
+  check("admin", await status(admin, `/api/patients/${pid}`), 200);
+  check("nurse not assigned", await status(nurse, `/api/patients/${pid}`), 403);
+  check("family not assigned", await status(family, `/api/patients/${pid}`), 403);
+  check("anonymous", await status(anon, `/api/patients/${pid}`), 401);
+  check("missing patient", await status(admin, "/api/patients/99999999"), 404);
+  check("non-numeric id", await status(admin, "/api/patients/abc"), 404);
+  const detail = await (await admin(`/api/patients/${pid}`)).json();
+  check("admin sees room and aid", [detail.room, detail.prescribedAid], ["R-204", "cane"]);
+
+  console.log("# assigning caregivers");
+  const p43 = (await (await admin("/api/patients")).json()).patients.find((p) => p.code === "P-0043").id;
+  const crew = (await (await admin(`/api/patients/${p43}`)).json()).contacts;
+  const n2 = crew.find((c) => c.email === "nurse2@example.test").id;
+  const f2 = crew.find((c) => c.email === "family2@example.test").id;
+  check("nurse cannot assign", (await call(nurse, `/api/patients/${pid}/contacts`, "PUT", { userIds: [n2] })).status, 403);
+  check("unknown user is rejected", (await call(admin, `/api/patients/${pid}/contacts`, "PUT", { userIds: [99999999] })).status, 400);
+  check("userIds must be numbers", (await call(admin, `/api/patients/${pid}/contacts`, "PUT", { userIds: ["abc"] })).status, 400);
+  check("failed assignment changed nothing", (await (await admin(`/api/patients/${pid}`)).json()).contacts.length, 0);
+  check("admin assigns nurse2 and family2", (await call(admin, `/api/patients/${pid}/contacts`, "PUT", { userIds: [n2, f2] })).status, 200);
+  check("nurse2 now sees the patient", (await pat(nurse2)).includes(code), true);
+  check("family2 now sees the patient", (await pat(family2)).includes(code), true);
+  check("nurse (not assigned) still does not", (await pat(nurse)).includes(code), false);
+
+  console.log("# changing the prescription");
+  check("nurse cannot", (await call(nurse, `/api/patients/${pid}/prescriptions`, "POST", { aid: "walker" })).status, 403);
+  check("unknown aid is rejected", (await call(admin, `/api/patients/${pid}/prescriptions`, "POST", { aid: "jetpack" })).status, 400);
+  check("same aid conflicts", (await call(admin, `/api/patients/${pid}/prescriptions`, "POST", { aid: "cane" })).status, 409);
+  check("admin changes cane to walker", (await call(admin, `/api/patients/${pid}/prescriptions`, "POST", { aid: "walker" })).status, 201);
+  const after = await (await admin(`/api/patients/${pid}`)).json();
+  check("history keeps both, one open", [after.prescribedAid, after.prescriptions.length, after.prescriptions.filter((x) => x.validTo === null).length], ["walker", 2, 1]);
+  const walker = await sendFull(code, "walker"), none = await sendFull(code, "none");
+  check("walker matches the new prescription", [walker.status, walker.alert], [201, "info"]);
+  check("no aid now raises a warning", [none.status, none.alert], [201, "warning"]);
+
+  console.log("# editing and discharging");
+  check("nurse cannot edit", (await call(nurse, `/api/patients/${pid}`, "PATCH", { age: "70" })).status, 403);
+  check("admin edits age", (await call(admin, `/api/patients/${pid}`, "PATCH", { age: "70" })).status, 200);
+  check("bad status is rejected", (await call(admin, `/api/patients/${pid}`, "PATCH", { status: "deleted" })).status, 400);
+  check("empty update is rejected", (await call(admin, `/api/patients/${pid}`, "PATCH", {})).status, 400);
+  check("age was changed", (await (await admin(`/api/patients/${pid}`)).json()).age, 70);
+  check("admin discharges", (await call(admin, `/api/patients/${pid}`, "PATCH", { status: "discharged" })).status, 200);
+  check("discharged patient leaves the active list", (await pat(admin)).includes(code), false);
+  const gone = await sendFull(code, "none");
+  check("discharged patient: event stored, no alert", [gone.status, gone.alert], [201, null]);
+  check("history is kept after discharge", (await status(admin, `/api/patients/${pid}`)), 200);
+  check("admin reactivates", (await call(admin, `/api/patients/${pid}`, "PATCH", { status: "active" })).status, 200);
+  const back = await sendFull(code, "none");
+  check("reactivated patient raises alerts again", [back.status, back.alert], [201, "warning"]);
 } catch (e) {
   console.error(`Could not run the test against ${BASE}: ${e.cause?.code ?? e.message}`);
   process.exit(2);

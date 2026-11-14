@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { logoutAction } from "@/app/login/actions";
 import { requireUser } from "@/lib/dal";
@@ -10,6 +11,10 @@ async function Header() {
         <p className="truncate text-sm font-semibold">{user.name}</p>
         <p className="text-xs capitalize text-zinc-600 dark:text-zinc-400">{user.role}</p>
       </div>
+      <nav className="flex items-center gap-4 text-sm">
+        <Link href="/dashboard" className="underline-offset-4 hover:underline">Dashboard</Link>
+        {user.role === "admin" && <Link href="/dashboard/admin/patients" className="underline-offset-4 hover:underline">Patients</Link>}
+      </nav>
       <form action={logoutAction}>
         <button type="submit" className="h-9 rounded-md border border-zinc-300 px-3 text-sm dark:border-zinc-700">
           Sign out

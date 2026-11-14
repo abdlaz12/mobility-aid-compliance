@@ -1,12 +1,22 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useTransition } from "react";
 import { loginAction } from "./actions";
 
 export function LoginForm() {
-  const [state, action, pending] = useActionState(loginAction, undefined);
+  const [state, action, actionPending] = useActionState(loginAction, undefined);
+  const [transitioning, startTransition] = useTransition();
+  const pending = actionPending || transitioning;
   return (
-    <form action={action} className="flex flex-col gap-4">
+    // onSubmit instead of action={...}: React 19 would clear the email field after a failed login.
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const data = new FormData(e.currentTarget);
+        startTransition(() => action(data));
+      }}
+      className="flex flex-col gap-4"
+    >
       <label className="flex flex-col gap-1 text-sm font-medium">
         Email
         <input

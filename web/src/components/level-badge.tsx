@@ -8,12 +8,12 @@ const LEVELS: Record<string, { icon: string; label: string; cls: string }> = {
   no_data: { icon: "…", label: "No data", cls: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300" },
 };
 
-export function LevelBadge({ level }: { level: string }) {
+export function LevelBadge({ level, label }: { level: string; label?: string }) {
   const l = LEVELS[level] ?? { icon: "?", label: level, cls: LEVELS.info.cls };
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${l.cls}`}>
       <span aria-hidden>{l.icon}</span>
-      {l.label}
+      {label ?? l.label}
     </span>
   );
 }

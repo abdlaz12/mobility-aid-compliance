@@ -8,7 +8,8 @@ Next.js (App Router, TypeScript, Tailwind) with Prisma and SQLite for developmen
 - Detection intake (`POST /api/detections`) and the compliance engine (`src/lib/compliance.ts`).
 - Login (Auth.js, email and password) with roles admin, nurse, family, enforced on the server in `src/lib/dal.ts`.
 - Dashboard at `/dashboard`: pending alerts with Acknowledge, patient status, review queue (staff) or status and alert history (family). Mobile first (375 px).
-- Not built yet: user and patient management screens, patient history page, push notifications, escalation timer, real-time channel (the dashboard refreshes every 15 s).
+- Admin screens under `/dashboard/admin/patients` (FR1): add a patient, edit details, change the prescribed aid (history is kept), assign nurses and family members, discharge and reactivate.
+- Not built yet: user management screens, patient history page, ReID enrolment, push notifications, escalation timer, real-time channel (the dashboard refreshes every 15 s).
 
 ## Run it (PowerShell, in this folder, not WSL)
 ```
@@ -36,7 +37,7 @@ npm test                    # unit tests (compliance rules, validator, passwords
 npm run test:access         # who may see and acknowledge what; needs the server running + seeded DB
 node ../tools/mock-generator/generate.mjs all    # sends sample detections (see tools/mock-generator)
 ```
-`test:access` signs in as each demo user and checks the role and patient-scope rules, including two nurses acknowledging the same alert at once.
+`test:access` signs in as each demo user and checks the role and patient-scope rules, including two nurses acknowledging the same alert at once, and the admin patient management (create, prescriptions, caregivers, discharge). It can be run repeatedly, but each run leaves a test patient (`T-...`) behind. To start clean: `npx prisma migrate reset` (drops the database, applies migrations and runs the seed).
 Useful: `npx prisma studio` opens a browser view of the database.
 
 ## Notes

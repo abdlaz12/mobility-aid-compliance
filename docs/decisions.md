@@ -24,6 +24,10 @@ Short record of decisions and the reason for each. Date format YYYY-MM-DD.
 | 2026-11-13 | **Role and patient scope enforced in one data access layer** (`web/src/lib/dal.ts`); the token holds identity only | Roles are read from the database on each request, so deactivation and reassignment apply at once (NFR2.3). Pages and API routes share the same functions, so they cannot disagree. |
 | 2026-11-13 | **Family does not see Info entries**; a nurse sees only assigned patients; low-confidence detections with an unmatched patient code are visible to admin only | Info is the silent log (FR4.1). Unmatched detections have no patient to scope by. |
 | 2026-11-13 | **Dashboard refreshes by polling every 15 s** until the real-time channel is decided | Keeps FR9.1 usable without the Socket.io or SSE decision. |
+| 2026-11-14 | **Patient code is set once and cannot be edited**; the room is created on the fly if new | The code is the link to detection events and the ReID gallery. Rooms must match `room_id` in events, so typing a new one is faster than a separate rooms screen (still planned). |
+| 2026-11-14 | **A caregiver's type (nurse or family) comes from the user's role**, and only active nurses and family members can be assigned | One source of truth; an admin or a deactivated user can never receive a patient's alerts. |
+| 2026-11-14 | **Discharge keeps all history; a discharged patient creates no alerts** (detections are still stored) | FR1.4. Deleting ReID embeddings on request is separate and comes with ReID enrolment (Sprint 2). |
+| 2026-11-14 | **Admin forms submit through `onSubmit`, not `action`** | React 19 clears every field after a form action finishes, which would wipe the input after a validation error. |
 
 ## Open decisions
 - **Real-time channel:** Socket.io on a separate small Node process, or Server-Sent Events. Next.js API routes usually cannot hold long-lived WebSocket connections.

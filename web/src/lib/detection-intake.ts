@@ -40,6 +40,7 @@ export async function processDetection(e: DetectionEvent): Promise<IntakeResult>
       eventType: e.event_type,
       identified: e.identity.patient_id !== null,
       patientKnown: patient !== null,
+      patientActive: patient?.status === "active",
       identityConfidence: e.identity.confidence,
       aidLabel: e.aid.label,
       aidConfidence: e.aid.confidence,

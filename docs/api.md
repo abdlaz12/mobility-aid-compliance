@@ -46,7 +46,9 @@ WebSocket (Socket.io), events pushed to the open dashboard:
 Clients only receive events for patients they are allowed to see.
 
 ## Implemented so far
-`POST /api/detections`, `GET /api/detections?needs_review=true`, `GET /api/patients`, `GET /api/alerts`, `GET /api/alerts/{id}`, `POST /api/alerts/{id}/acknowledge`. Not yet: patient create, update, prescriptions and contacts (admin), real-time updates.
+`POST /api/detections`, `GET /api/detections?needs_review=true`, `GET /api/patients`, `POST /api/patients`, `GET /api/patients/{id}`, `PATCH /api/patients/{id}`, `POST /api/patients/{id}/prescriptions`, `PUT /api/patients/{id}/contacts`, `GET /api/alerts`, `GET /api/alerts/{id}`, `POST /api/alerts/{id}/acknowledge`. Not yet: real-time updates.
+
+Patient management notes: `POST /api/patients` takes `{code, name, initials?, age?, room?, aid}` and answers **409** for a code already used and **400** for invalid input or an unknown aid. `PATCH` changes only the keys sent, including `status: "discharged" | "active"`. `POST .../prescriptions` takes `{aid}`, closes the open prescription and answers **409** if that aid is already current. `PUT .../contacts` takes `{userIds: [...]}` and replaces the whole set; only active nurses and family members can be assigned (**400** otherwise). `GET /api/patients/{id}` returns prescription history and caregivers to admin only; a nurse or family member who is not assigned gets **403**.
 
 ## Open questions
 - Exact label set of the aid classifier (from the Kirkby models).

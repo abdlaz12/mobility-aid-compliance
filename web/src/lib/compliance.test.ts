@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateDetection, type ComplianceInput } from "./compliance";
+import { cooldownMinutes, evaluateDetection, type ComplianceInput } from "./compliance";
 import { validateDetectionEvent } from "./detection-validator";
 import { checkBearerKey } from "./api-key";
 
@@ -8,7 +8,7 @@ const T = { identity: 0.6, aid: 0.6 };
 const base: ComplianceInput = {
   eventType: "detection", identified: true, patientKnown: true, patientActive: true,
   identityConfidence: 0.9, aidLabel: "walker", aidConfidence: 0.95,
-  aidKnown: true, prescribedAid: "walker",
+  aidKnown: true, prescribedAid: "walker", inCooldown: false,
 };
 
 test("matching aid -> info", () => {
@@ -16,6 +16,15 @@ test("matching aid -> info", () => {
 });
 test("different aid -> warning", () => {
   assert.equal(evaluateDetection({ ...base, aidLabel: "none" }, T).alertLevel, "warning");
+});
+test("repeat within the cooldown -> no new warning; matching aid and emergencies are not suppressed", () => {
+  const d = evaluateDetection({ ...base, aidLabel: "none", inCooldown: true }, T);
+  assert.deepEqual([d.alertLevel, d.needsReview], [null, false]);
+  assert.equal(evaluateDetection({ ...base, inCooldown: true }, T).alertLevel, "info");
+  assert.equal(evaluateDetection({ ...base, eventType: "fall_indication", inCooldown: true }, T).alertLevel, "emergency");
+});
+test("cooldown setting: default 5, 0 disables, junk falls back", () => {
+  assert.deepEqual([cooldownMinutes({}), cooldownMinutes({ COOLDOWN_MINUTES: "0" }), cooldownMinutes({ COOLDOWN_MINUTES: "2.5" }), cooldownMinutes({ COOLDOWN_MINUTES: "abc" }), cooldownMinutes({ COOLDOWN_MINUTES: "-3" })], [5, 0, 2.5, 5, 5]);
 });
 test("unknown person -> no alert, no review", () => {
   const d = evaluateDetection({ ...base, identified: false, patientKnown: false }, T);
@@ -110,4 +119,62 @@ test("patient input: contacts must be a list of whole numbers, duplicates remove
   assert.deepEqual(parseContacts({ userIds: ["2", 3, "2"] }), { ok: true, value: { userIds: [2, 3] } });
   assert.deepEqual(parseContacts({ userIds: [] }), { ok: true, value: { userIds: [] } });
   for (const bad of [{ userIds: "2" }, { userIds: ["a"] }, { userIds: [1.5] }, { userIds: ["1; DROP"] }, {}]) assert.equal(parseContacts(bad).ok, false);
+});
+
+
+import { AttemptLimiter } from "./attempt-limiter";
+test("attempt limiter: locks after max failures, unlocks when they age out, reset clears, keys are independent", () => {
+  let t = 0;
+  const lim = new AttemptLimiter(3, 1000, () => t);
+  for (let i = 0; i < 2; i++) lim.fail("a");
+  assert.equal(lim.isLocked("a"), false);
+  lim.fail("a");
+  assert.equal(lim.isLocked("a"), true);
+  assert.equal(lim.isLocked("b"), false);
+  assert.equal(lim.retryAfterMs("a"), 1000);
+  t = 600; assert.equal(lim.retryAfterMs("a"), 400);
+  t = 1001; assert.equal(lim.isLocked("a"), false, "failures age out of the window");
+  t = 2000; for (let i = 0; i < 3; i++) lim.fail("a");
+  assert.equal(lim.isLocked("a"), true);
+  lim.reset("a");
+  assert.equal(lim.isLocked("a"), false);
+});
+test("attempt limiter: failures spread over time never lock", () => {
+  let t = 0;
+  const lim = new AttemptLimiter(3, 1000, () => t);
+  for (let i = 0; i < 20; i++) { lim.fail("a"); t += 600; assert.equal(lim.isLocked("a"), false); }
+});
+
+
+import { parseEmail, parseNewUser, parsePassword, parsePasswordChange, parsePushoverKey, parseUserUpdate } from "./user-input";
+test("user input: valid new user, email lowercased", () => {
+  const r = parseNewUser({ name: " Ann Nurse ", email: " Ann@Example.TEST ", role: "nurse", password: "correct horse" });
+  assert.deepEqual(r, { ok: true, value: { name: "Ann Nurse", email: "ann@example.test", role: "nurse", password: "correct horse" } });
+});
+test("user input: rejects bad email, short or long password, password equal to email, bad role, empty name", () => {
+  const good = { name: "Ann", email: "ann@example.test", role: "nurse", password: "correct horse" };
+  for (const bad of [{ email: "nope" }, { email: "a b@x.org" }, { email: "x@y" }, { password: "short" }, { password: "x".repeat(201) },
+    { password: "ann@example.test" }, { role: "superuser" }, { role: "" }, { name: "" }]) {
+    assert.equal(parseNewUser({ ...good, ...bad }).ok, false, JSON.stringify(bad));
+  }
+  assert.equal(parseEmail("x".repeat(250) + "@a.org").ok, false);
+  assert.equal(parsePassword("a".repeat(10)).ok, true);
+});
+test("user input: update accepts name and isActive (boolean or form string), nothing else", () => {
+  assert.deepEqual(parseUserUpdate({ isActive: "false" }), { ok: true, value: { isActive: false } });
+  assert.deepEqual(parseUserUpdate({ isActive: true, name: "B" }), { ok: true, value: { isActive: true, name: "B" } });
+  assert.equal(parseUserUpdate({ isActive: "maybe" }).ok, false);
+  assert.equal(parseUserUpdate({ role: "admin" }).ok, false, "the role cannot be changed");
+  assert.equal(parseUserUpdate({}).ok, false);
+});
+test("user input: password change needs the current one and a different new one", () => {
+  assert.equal(parsePasswordChange({ currentPassword: "old password!", newPassword: "new password!" }, "a@b.org").ok, true);
+  assert.equal(parsePasswordChange({ currentPassword: "", newPassword: "new password!" }, "a@b.org").ok, false);
+  assert.equal(parsePasswordChange({ currentPassword: "same password", newPassword: "same password" }, "a@b.org").ok, false);
+  assert.equal(parsePasswordChange({ currentPassword: "x", newPassword: "short" }, "a@b.org").ok, false);
+});
+test("user input: pushover key is 30 letters and digits, empty clears", () => {
+  assert.deepEqual(parsePushoverKey({ key: "" }), { ok: true, value: { key: null } });
+  assert.equal(parsePushoverKey({ key: "a".repeat(30) }).ok, true);
+  for (const bad of ["a".repeat(29), "a".repeat(31), "a".repeat(29) + "!", "<script>"]) assert.equal(parsePushoverKey({ key: bad }).ok, false);
 });

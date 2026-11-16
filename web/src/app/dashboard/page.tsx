@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { LevelBadge } from "@/components/level-badge";
@@ -63,7 +64,7 @@ async function PendingAlerts({ user }: { user: SessionUser }) {
                 <LevelBadge level={a.level} />
                 <span className="text-xs text-zinc-600 dark:text-zinc-400">{fmt(a.createdAt)}</span>
               </div>
-              <p className="mt-2 font-medium">{a.patient.name} <span className="text-sm font-normal text-zinc-600 dark:text-zinc-400">({a.patient.code})</span></p>
+              <p className="mt-2 font-medium"><Link href={`/dashboard/patients/${a.patient.id}`} className="underline-offset-4 hover:underline">{a.patient.name}</Link> <span className="text-sm font-normal text-zinc-600 dark:text-zinc-400">({a.patient.code})</span></p>
               <p className="text-sm">Room {a.detection.roomId} · detected: <strong>{a.detection.aidLabel}</strong></p>
               {a.level === "warning" && a.ackDeadline && <p className="text-xs text-zinc-600 dark:text-zinc-400">Acknowledge before {fmt(a.ackDeadline)}, or it escalates</p>}
               {a.escalatedAt && <p className="text-xs font-medium text-orange-800 dark:text-orange-300">Escalated {fmt(a.escalatedAt)}: nurse and family were notified</p>}
@@ -90,7 +91,7 @@ async function Patients({ user }: { user: SessionUser }) {
           {patients.map((p) => (
             <li key={p.id} className={card}>
               <div className="flex items-center justify-between gap-2">
-                <p className="font-medium">{p.name}</p>
+                <Link href={`/dashboard/patients/${p.id}`} className="font-medium underline-offset-4 hover:underline">{p.name}</Link>
                 <LevelBadge level={p.state} />
               </div>
               <p className="text-xs text-zinc-600 dark:text-zinc-400">{p.code}{p.room && ` · Room ${p.room}`}</p>

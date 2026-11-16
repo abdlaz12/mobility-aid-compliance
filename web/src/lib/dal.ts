@@ -15,7 +15,7 @@ export type SessionUser = { id: number; name: string; email: string; role: Role 
 /** Thrown by data functions; API routes map it to the HTTP status. */
 export class HttpError extends Error {
   constructor(
-    public status: 400 | 401 | 403 | 404 | 409,
+    public status: 400 | 401 | 403 | 404 | 409 | 429,
     message: string,
   ) {
     super(message);
@@ -289,4 +289,46 @@ export async function setContacts(user: SessionUser, id: number, userIds: number
     prisma.patientContact.deleteMany({ where: { patientId: id } }),
     ...users.map((u) => prisma.patientContact.create({ data: { patientId: id, userId: u.id, type: u.role } })),
   ]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Patient history (detections and alerts of one patient).
+// ---------------------------------------------------------------------------------------------
+
+/** Detections and alerts of one patient, newest first. Family see alerts only (no raw detections, no Info log). */
+export async function getPatientHistory(user: SessionUser, id: number, limit = 50) {
+  const patient = await prisma.patient.findFirst({
+    where: { id, ...patientScope(user) },
+    include: { zone: true, prescriptions: { where: { validTo: null }, orderBy: { validFrom: "desc" }, take: 1, include: { mobilityAid: true } } },
+  });
+  if (!patient) {
+    // Do not reveal to a nurse or family member whether a patient they cannot see exists.
+    const exists = user.role === "admin" ? false : (await prisma.patient.count({ where: { id } })) > 0;
+    throw new HttpError(exists ? 403 : 404, exists ? "Not allowed" : "Patient not found");
+  }
+  const family = user.role === "family";
+  const [alerts, detections] = await Promise.all([
+    prisma.alert.findMany({
+      where: { patientId: id, ...(family ? { level: { not: "info" } } : {}) },
+      orderBy: { id: "desc" },
+      take: limit,
+      include: { detection: { select: { roomId: true, aidLabel: true, timestamp: true } }, acknowledgedBy: { select: { name: true } } },
+    }),
+    family
+      ? Promise.resolve([])
+      : prisma.detection.findMany({
+          where: { patientId: id },
+          orderBy: { timestamp: "desc" },
+          take: limit,
+          select: { id: true, timestamp: true, roomId: true, aidLabel: true, aidConfidence: true, identityConfidence: true, needsReview: true, eventType: true },
+        }),
+  ]);
+  return {
+    patient: {
+      id: patient.id, code: patient.code, name: patient.name, initials: patient.initials, status: patient.status,
+      room: patient.zone?.zoneName ?? null, prescribedAid: patient.prescriptions[0]?.mobilityAid.name ?? null,
+    },
+    alerts,
+    detections,
+  };
 }

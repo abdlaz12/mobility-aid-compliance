@@ -46,16 +46,17 @@ before(async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "mac-test-"));
   copyFileSync(src, path.join(dir, "test.db"));
   process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
+  process.env.COOLDOWN_MINUTES = "0"; // the tests below create several warnings for one patient; cooldown has its own tests
   const [{ prisma }, { processDetection }, { escalateOverdueAlerts }, { deliverQueued }] = await Promise.all([
     import("./prisma"), import("./detection-intake"), import("./escalation"), import("./notify/queue"),
   ]);
   m = { prisma, processDetection, escalateOverdueAlerts, deliverQueued };
 });
 
-// Every test starts from a quiet database: nothing pending, nothing queued, P-0042 admitted.
+// Every test starts from a quiet database: no alerts, nothing queued, patients admitted.
 beforeEach(async () => {
   await m.prisma.notification.deleteMany();
-  await m.prisma.alert.updateMany({ data: { status: "closed" } });
+  await m.prisma.alert.deleteMany(); // old alerts would count as part of an episode (cooldown)
   await m.prisma.patient.updateMany({ data: { status: "active" } });
 });
 
@@ -160,4 +161,55 @@ test("two deliveries at the same moment send each notification once", async () =
   assert.equal(rec.sent.length, 1);
   assert.equal((await notes(id))[0].attempts, 1);
   await m.prisma.alert.update({ where: { id }, data: { status: "closed" } });
+});
+
+
+// ---- Cooldown (FR3.3) ---------------------------------------------------------------------------------
+async function withCooldown<T>(minutes: string, fn: () => Promise<T>): Promise<T> {
+  const before = process.env.COOLDOWN_MINUTES;
+  process.env.COOLDOWN_MINUTES = minutes;
+  try { return await fn(); } finally { process.env.COOLDOWN_MINUTES = before; }
+}
+const level = async (patient: string, aid: string, type: "detection" | "fall_indication" = "detection") =>
+  (await m.processDetection(ev(patient, aid, type))).alertLevel;
+
+test("cooldown: the second warning of the same episode is suppressed, the detection is still stored", () => withCooldown("5", async () => {
+  const before = await m.prisma.detection.count();
+  assert.equal(await level("P-0042", "none"), "warning");
+  assert.equal(await level("P-0042", "none"), null);
+  assert.equal(await level("P-0042", "none"), null);
+  assert.equal(await m.prisma.detection.count(), before + 3);
+  assert.equal(await m.prisma.alert.count({ where: { level: "warning", status: "pending" } }), 1);
+}));
+
+test("cooldown: being seen compliant ends the episode, so the next non-compliance warns again", () => withCooldown("5", async () => {
+  assert.equal(await level("P-0042", "none"), "warning");
+  assert.equal(await level("P-0042", "walker"), "info");
+  assert.equal(await level("P-0042", "none"), "warning");
+}));
+
+test("cooldown: after it runs out a new warning is raised, and it is per patient", () => withCooldown("5", async () => {
+  assert.equal(await level("P-0042", "none"), "warning");
+  assert.equal(await level("P-0043", "none"), "warning", "another patient is not affected");
+  await m.prisma.alert.updateMany({ data: { createdAt: new Date(Date.now() - 6 * 60_000) } });
+  assert.equal(await level("P-0042", "none"), "warning");
+}));
+
+test("cooldown: an escalated alert still counts as the same episode", () => withCooldown("5", async () => {
+  assert.equal(await level("P-0042", "none"), "warning");
+  await m.prisma.alert.updateMany({ where: { level: "warning" }, data: { ackDeadline: PAST() } });
+  assert.equal(await m.escalateOverdueAlerts(), 1);
+  assert.equal(await level("P-0042", "none"), null);
+}));
+
+test("cooldown: emergencies are never suppressed, and 0 turns the cooldown off", async () => {
+  await withCooldown("5", async () => {
+    assert.equal(await level("P-0042", "none"), "warning");
+    assert.equal(await level("P-0042", "none", "fall_indication"), "emergency");
+    assert.equal(await level("P-0042", "none", "fall_indication"), "emergency");
+  });
+  await withCooldown("0", async () => {
+    assert.equal(await level("P-0043", "none"), "warning");
+    assert.equal(await level("P-0043", "none"), "warning");
+  });
 });

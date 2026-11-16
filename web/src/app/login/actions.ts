@@ -14,7 +14,10 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     });
   } catch (e) {
     // A failed login is an AuthError. A successful one throws a redirect, which must be rethrown.
-    if (e instanceof AuthError) return { error: "Wrong email or password." };
+    if (e instanceof AuthError) {
+      const locked = (e as AuthError & { code?: string }).code === "too_many_attempts";
+      return { error: locked ? "Too many failed attempts. Wait about 15 minutes and try again." : "Wrong email or password." };
+    }
     throw e;
   }
 }

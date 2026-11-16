@@ -42,6 +42,8 @@ async function Content({ params }: { params: Promise<{ id: string }> }) {
         {discharged ? <LevelBadge level="no_data" label="Discharged" /> : <LevelBadge level="ok" label="Active" />}
       </div>
 
+      <Link href={`/dashboard/patients/${p.id}`} className="text-sm underline">View alert and detection history</Link>
+
       <section className={box}>
         <h2 className="mb-3 text-lg font-semibold">Details</h2>
         <ActionForm action={updateDetailsAction} submitLabel="Save details">

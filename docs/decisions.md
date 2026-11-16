@@ -33,6 +33,11 @@ Short record of decisions and the reason for each. Date format YYYY-MM-DD.
 | 2026-11-16 | **Warning goes to nurses; Escalated and Emergency go to nurses and family** | FR4.4. The nurse is told again at escalation on purpose. |
 | 2026-11-16 | **Notification text carries room, aid, time, initials and patient code only** | NFR3.3. The message builder is never given the full name, and a test checks it. Pushover priority is capped at 1 because priority 2 needs retry and expire settings. |
 | 2026-11-16 | **`log` channel by default, Pushover only when configured** | Nothing leaves the server unless an administrator sets `PUSHOVER_APP_TOKEN` and a user key. |
+| 2026-11-16 | **Cooldown ends at the cooldown time or when the patient is seen compliant** (an Info entry after the warning); emergencies are never suppressed | FR3.3. A patient who puts the walker on and takes it off again is a new episode and deserves a new warning. |
+| 2026-11-16 | **The role and email of an account are fixed after creation**; to change a role, deactivate and create a new account | Caregiver assignments are typed by role; letting the role change would leave stale assignments behind. |
+| 2026-11-16 | **Deactivation is the way to end access**; a password reset does not end an open session | Sessions are JWTs. The user is re-read from the database on every request, so deactivation is immediate. A token version would be needed to cut sessions on password reset. |
+| 2026-11-16 | **Login lock-out in memory**: 5 wrong passwords per account and 30 per IP in 15 minutes; unknown emails count too | Fits the single server process. No extra table or dependency. Counting unknown emails keeps the lock from revealing which accounts exist. |
+| 2026-11-16 | **Pushover keys are entered by each user** on their Account page, never shown again | Keeps the key out of the admin's hands and out of every response. |
 
 ## Open decisions
 - **Real-time channel:** Socket.io on a separate small Node process, or Server-Sent Events. Next.js API routes usually cannot hold long-lived WebSocket connections.

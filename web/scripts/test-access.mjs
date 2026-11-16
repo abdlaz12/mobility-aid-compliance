@@ -16,7 +16,7 @@ function check(label, actual, expected) {
 }
 
 /** Tiny cookie jar: Auth.js login is a CSRF round trip. */
-async function login(email, password = PASSWORD) {
+async function login(email, password = PASSWORD, ip) {
   const jar = new Map();
   const absorb = (res) => { for (const c of res.headers.getSetCookie()) { const [kv] = c.split(";"); const i = kv.indexOf("="); jar.set(kv.slice(0, i), kv.slice(i + 1)); } };
   const cookie = () => [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
@@ -24,7 +24,7 @@ async function login(email, password = PASSWORD) {
   const { csrfToken } = await r1.json();
   const r2 = await fetch(`${BASE}/api/auth/callback/credentials`, {
     method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", cookie: cookie() },
+    headers: { "Content-Type": "application/x-www-form-urlencoded", cookie: cookie(), ...(ip ? { "x-forwarded-for": ip } : {}) },
     body: new URLSearchParams({ csrfToken, email, password, json: "true" }),
   });
   absorb(r2);
@@ -74,6 +74,8 @@ try {
   check("family2 (P-0043 only)", seeded(await pat(family2)), ["P-0043"]);
 
   console.log("# fresh alerts");
+  // One warning per episode (cooldown), and a compliant sighting ends an episode: send one first.
+  await send("P-0042", "walker"); await send("P-0043", "cane");
   check("send noncompliant event for P-0042", await send("P-0042", "none"), 201);
   check("send noncompliant event for P-0043", await send("P-0043", "none"), 201);
   const latest = async (code) => {
@@ -107,8 +109,8 @@ try {
   check("a second acknowledge conflicts", await ack(nurse2, a43), 409);
   check("nurse can for P-0042", await ack(nurse, a42), 200);
   check("missing alert", await ack(nurse, 99999999), 404);
-  const [r1, r2] = await Promise.all([send("P-0042", "none"), send("P-0042", "none")]);
-  check("two new events accepted", [r1, r2], [201, 201]);
+  await send("P-0042", "walker");
+  check("a new episode is accepted", await send("P-0042", "none"), 201);
   const race = (await (await admin("/api/alerts?status=pending&level=warning")).json()).alerts.filter((a) => a.patient.code === "P-0042")[0].id;
   const results = (await Promise.all([ack(nurse, race), ack(admin, race)])).sort();
   check("simultaneous acknowledge: exactly one wins", results, [200, 409]);
@@ -179,8 +181,93 @@ try {
   check("discharged patient: event stored, no alert", [gone.status, gone.alert], [201, null]);
   check("history is kept after discharge", (await status(admin, `/api/patients/${pid}`)), 200);
   check("admin reactivates", (await call(admin, `/api/patients/${pid}`, "PATCH", { status: "active" })).status, 200);
+  await sendFull(code, "walker"); // a new episode (the earlier warning is still inside the cooldown)
   const back = await sendFull(code, "none");
   check("reactivated patient raises alerts again", [back.status, back.alert], [201, "warning"]);
+
+  console.log("# history of one patient");
+  const p42 = (await (await admin("/api/patients")).json()).patients.find((p) => p.code === "P-0042").id;
+  const hist = (g, id = p42) => status(g, `/api/patients/${id}/history`);
+  check("anonymous", await hist(anon), 401);
+  check("admin", await hist(admin), 200);
+  check("assigned nurse", await hist(nurse), 200);
+  check("own family member", await hist(family), 200);
+  check("nurse not assigned (nurse2, P-0042)", await hist(nurse2), 403);
+  check("family of another patient", await hist(family2), 403);
+  check("missing patient", await hist(admin, 99999999), 404);
+  check("non-numeric id", await hist(admin, "abc"), 404);
+  const famHist = await (await family(`/api/patients/${p42}/history`)).json();
+  check("family: no raw detections, no Info log", [famHist.detections.length, famHist.alerts.some((a) => a.level === "info")], [0, false]);
+  const nurseHist = await (await nurse(`/api/patients/${p42}/history`)).json();
+  check("nurse sees detections and alerts", [nurseHist.detections.length > 0, nurseHist.alerts.length > 0], [true, true]);
+
+  console.log("# managing users (admin only)");
+  const stamp = Date.now().toString(36);
+  const email = `t${stamp}@example.test`, pw1 = "correct horse battery", pw2 = "another long passphrase", pw3 = "third long passphrase!";
+  const newUser = { name: "Test Nurse", email, role: "nurse", password: pw1 };
+  check("anonymous cannot list users", await status(anon, "/api/users"), 401);
+  check("nurse cannot list users", await status(nurse, "/api/users"), 403);
+  check("family cannot create users", (await call(family, "/api/users", "POST", newUser)).status, 403);
+  check("bad email is rejected", (await call(admin, "/api/users", "POST", { ...newUser, email: "nope" })).status, 400);
+  check("short password is rejected", (await call(admin, "/api/users", "POST", { ...newUser, password: "short" })).status, 400);
+  check("unknown role is rejected", (await call(admin, "/api/users", "POST", { ...newUser, role: "superuser" })).status, 400);
+  const made = await call(admin, "/api/users", "POST", newUser);
+  check("admin creates a user", made.status, 201);
+  const madeUser = (await made.json()).user;
+  check("duplicate email conflicts", (await call(admin, "/api/users", "POST", newUser)).status, 409);
+  const listText = await (await admin("/api/users")).text();
+  check("the list never contains password hashes", [listText.includes("passwordHash"), listText.includes("scrypt:")], [false, false]);
+  check("nurse cannot read a user", await status(nurse, `/api/users/${madeUser.id}`), 403);
+  const tu = await login(email, pw1);
+  check("the new user can sign in", await status(tu, "/api/patients"), 200);
+  check("and sees no patients until assigned", await pat(tu), []);
+  check("admin renames the user", (await call(admin, `/api/users/${madeUser.id}`, "PATCH", { name: "Renamed" })).status, 200);
+  check("the role cannot be changed", (await call(admin, `/api/users/${madeUser.id}`, "PATCH", { role: "admin" })).status, 400);
+  const adminId = (await (await admin("/api/users")).json()).users.find((u) => u.email === "admin@example.test").id;
+  check("an admin cannot deactivate themselves", (await call(admin, `/api/users/${adminId}`, "PATCH", { isActive: false })).status, 409);
+  check("deactivate the new user", (await call(admin, `/api/users/${madeUser.id}`, "PATCH", { isActive: false })).status, 200);
+  check("their open session stops working at once", await status(tu, "/api/patients"), 401);
+  check("they cannot sign in again", await status(await login(email, pw1), "/api/patients"), 401);
+  check("reactivate", (await call(admin, `/api/users/${madeUser.id}`, "PATCH", { isActive: true })).status, 200);
+  check("nurse cannot reset a password", (await call(nurse, `/api/users/${madeUser.id}/password`, "POST", { password: pw2 })).status, 403);
+  check("short reset password is rejected", (await call(admin, `/api/users/${madeUser.id}/password`, "POST", { password: "short" })).status, 400);
+  check("admin resets the password", (await call(admin, `/api/users/${madeUser.id}/password`, "POST", { password: pw2 })).status, 200);
+  check("the old password no longer works", await status(await login(email, pw1), "/api/patients"), 401);
+  check("the new one works", await status(await login(email, pw2), "/api/patients"), 200);
+
+  console.log("# own account");
+  const me = await login(email, pw2);
+  check("anonymous cannot change a password", (await anon("/api/account/password", { method: "POST", ...body({ currentPassword: pw2, newPassword: pw3 }) })).status, 401);
+  check("wrong current password", (await call(me, "/api/account/password", "POST", { currentPassword: "not my password", newPassword: pw3 })).status, 400);
+  check("new password equal to the old one", (await call(me, "/api/account/password", "POST", { currentPassword: pw2, newPassword: pw2 })).status, 400);
+  check("new password too short", (await call(me, "/api/account/password", "POST", { currentPassword: pw2, newPassword: "short" })).status, 400);
+  check("change the password", (await call(me, "/api/account/password", "POST", { currentPassword: pw2, newPassword: pw3 })).status, 200);
+  check("the old password stops working", await status(await login(email, pw2), "/api/patients"), 401);
+  check("the new password works", await status(await login(email, pw3), "/api/patients"), 200);
+  check("pushover: bad key", (await call(me, "/api/account/pushover", "PUT", { key: "short" })).status, 400);
+  const key = "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5";
+  check("pushover: valid key", await (await call(me, "/api/account/pushover", "PUT", { key })).json(), { configured: true });
+  check("the key never appears in the user list", (await (await admin("/api/users")).text()).includes(key), false);
+  check("pushover: clear the key", await (await call(me, "/api/account/pushover", "PUT", { key: "" })).json(), { configured: false });
+  check("anonymous cannot set a key", (await anon("/api/account/pushover", { method: "PUT", ...body({ key }) })).status, 401);
+  let last = 0;
+  for (let i = 0; i < 5; i++) last = (await call(me, "/api/account/password", "POST", { currentPassword: "guess " + i + " guess", newPassword: pw2 })).status;
+  check("five wrong current passwords are answered normally", last, 400);
+  check("then even the right one is refused for a while", (await call(me, "/api/account/password", "POST", { currentPassword: pw3, newPassword: pw2 })).status, 429);
+
+  console.log("# login lock-out");
+  const lockEmail = `l${stamp}@example.test`, lockPw = "lock test passphrase";
+  check("create a throwaway user", (await call(admin, "/api/users", "POST", { name: "Lock Test", email: lockEmail, role: "family", password: lockPw })).status, 201);
+  const fakeIp = () => `10.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`;
+  for (let i = 0; i < 5; i++) await login(lockEmail, "wrong password " + i, fakeIp());
+  check("after 5 wrong passwords even the right one is refused", await status(await login(lockEmail, lockPw, fakeIp()), "/api/patients"), 401);
+  check("other accounts are not affected", await status(await login("admin@example.test"), "/api/patients"), 200);
+  const unknownEmail = `nobody${stamp}@example.test`;
+  for (let i = 0; i < 6; i++) await login(unknownEmail, "wrong password " + i, fakeIp());
+  check("unknown emails lock too, so the lock does not reveal which accounts exist", await status(await login(unknownEmail, "whatever long password", fakeIp()), "/api/patients"), 401);
+  const lockedId = (await (await admin("/api/users")).json()).users.find((u) => u.email === lockEmail).id;
+  check("an admin password reset lifts the lock", (await call(admin, `/api/users/${lockedId}/password`, "POST", { password: "fresh long passphrase" })).status, 200);
+  check("and the user can sign in again", await status(await login(lockEmail, "fresh long passphrase", fakeIp()), "/api/patients"), 200);
 } catch (e) {
   console.error(`Could not run the test against ${BASE}: ${e.cause?.code ?? e.message}`);
   process.exit(2);

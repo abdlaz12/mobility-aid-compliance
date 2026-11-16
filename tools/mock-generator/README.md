@@ -15,7 +15,7 @@ Options: `--url` (default `http://localhost:3000`; use the port `next dev` print
 | Scenario | Sends | Expected |
 |---|---|---|
 | `compliant` | aid matches the prescription | 201, info |
-| `noncompliant` | a different aid or none | 201, warning |
+| `noncompliant` | a compliant sighting, then a different aid or none | 201 info, then 201 warning |
 | `unknown` | unknown person (`patient_id = null`) | 201, no alert |
 | `lowconf` | low aid confidence | 201, flagged for review, no alert |
 | `duplicate` | the same `event_id` twice | 201 then 200 |
@@ -24,4 +24,4 @@ Options: `--url` (default `http://localhost:3000`; use the port `next dev` print
 
 `all` and the single scenarios check these expectations and exit with code 1 on a mismatch. Prescriptions are those of the fake seed data (`web/prisma/seed.ts`: P-0042 walker, P-0043 cane), so run `npx prisma db seed` first.
 
-Not covered yet: repeated events inside a cooldown (the cooldown is Sprint 2).
+The server raises one warning per episode (`COOLDOWN_MINUTES`, default 5; a compliant sighting ends an episode). That is why `noncompliant` and `duplicate` start with a compliant sighting: it lets you repeat them at any time. Sending `noncompliant` events in a row yourself shows the suppression: only the first raises a warning.

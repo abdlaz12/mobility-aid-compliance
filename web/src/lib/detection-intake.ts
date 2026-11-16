@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { DetectionEvent } from "@/lib/detection-validator";
-import { ackDeadlineMinutes, evaluateDetection, readThresholds } from "@/lib/compliance";
+import { ackDeadlineMinutes, cooldownMinutes, evaluateDetection, readThresholds } from "@/lib/compliance";
 import { enqueueForAlert } from "@/lib/notify/queue";
 
 export type IntakeResult = {
@@ -11,6 +11,24 @@ export type IntakeResult = {
   alertLevel: string | null;
   reason: string;
 };
+
+/**
+ * FR3.3: is this detection part of an episode that already raised a warning? An episode lasts until the
+ * cooldown runs out, or until the patient is seen compliant again (an Info entry after the warning).
+ */
+async function inCooldown(patientId: number): Promise<boolean> {
+  const minutes = cooldownMinutes();
+  if (minutes <= 0) return false;
+  const since = new Date(Date.now() - minutes * 60_000);
+  const risk = await prisma.alert.findFirst({
+    where: { patientId, level: { in: ["warning", "escalated"] }, createdAt: { gte: since } },
+    orderBy: { id: "desc" },
+    select: { id: true },
+  });
+  if (!risk) return false;
+  const resolved = await prisma.alert.findFirst({ where: { patientId, level: "info", id: { gt: risk.id } }, select: { id: true } });
+  return resolved === null;
+}
 
 /**
  * Store the event first (NFR4.1), then evaluate it and create an alert if needed.
@@ -47,6 +65,7 @@ export async function processDetection(e: DetectionEvent): Promise<IntakeResult>
       aidConfidence: e.aid.confidence,
       aidKnown: aid !== null,
       prescribedAid: prescription?.mobilityAid.name ?? null,
+      inCooldown: patient ? await inCooldown(patient.id) : false,
     },
     readThresholds(),
   );

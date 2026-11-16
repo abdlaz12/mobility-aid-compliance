@@ -10,6 +10,7 @@ Scenarios:
   all           one of each scenario below, with a PASS/FAIL check (smoke test)
   compliant     patient uses the prescribed aid            -> 201, info
   noncompliant  patient has a different aid / none          -> 201, warning
+                (sends a compliant sighting first: one warning per episode, see COOLDOWN_MINUTES)
   unknown       unknown person in the hallway (null id)     -> 201, no alert
   lowconf       low-confidence detection                    -> 201, needs_review
   duplicate     same event_id sent twice                    -> 201 then 200
@@ -73,12 +74,17 @@ async function send(o, ev) {
 function scenarios(o) {
   const p = o.patient;
   const dupId = randomUUID();
+  // The cooldown (FR3.3) allows one warning per episode, and a compliant sighting ends an episode. Sending
+  // one first makes every run of a scenario start a fresh episode, so it can be repeated at any time.
+  // A function, so each scenario gets its own event: sharing one would send the same event_id twice (a duplicate).
+  const reset = () => [event({ patient: p, aid: PRESCRIBED[p] ?? "walker" }), [201, "info", false]];
   return {
     compliant: [[event({ patient: p, aid: PRESCRIBED[p] ?? "walker" }), [201, "info", false]]],
-    noncompliant: [[event({ patient: p, aid: wrongAid(p) }), [201, "warning", false]]],
+    noncompliant: [reset(), [event({ patient: p, aid: wrongAid(p) }), [201, "warning", false]]],
     unknown: [[event({ patient: null, aid: "none", idConf: 0.3, room: "H-2" }), [201, null, false]]],
     lowconf: [[event({ patient: p, aid: wrongAid(p), aidConf: 0.35 }), [201, null, true]]],
     duplicate: [
+      reset(),
       [event({ patient: p, aid: wrongAid(p), id: dupId }), [201, "warning", false]],
       [event({ patient: p, aid: wrongAid(p), id: dupId }), [200, null, false]],
     ],

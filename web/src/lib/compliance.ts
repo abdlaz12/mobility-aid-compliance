@@ -18,6 +18,8 @@ export type ComplianceInput = {
   aidKnown: boolean;
   /** Name of the patient's current prescribed aid, or null if none is set. */
   prescribedAid: string | null;
+  /** An alert for this same episode of non-compliance was raised within the cooldown (FR3.3). */
+  inCooldown: boolean;
 };
 
 export type ComplianceDecision = {
@@ -60,6 +62,10 @@ export function evaluateDetection(i: ComplianceInput, t: Thresholds): Compliance
   if (i.aidLabel === i.prescribedAid) {
     return { needsReview: false, alertLevel: "info", reason: "aid matches prescription" };
   }
+  // FR3.3: one warning per episode. A patient walking without the aid is detected again every moment.
+  if (i.inCooldown) {
+    return { needsReview: false, alertLevel: null, reason: "repeat within cooldown, alert suppressed" };
+  }
   return {
     needsReview: false,
     alertLevel: "warning",
@@ -81,4 +87,10 @@ export function readThresholds(env: NodeJS.ProcessEnv = process.env): Thresholds
 export function ackDeadlineMinutes(env: NodeJS.ProcessEnv = process.env): number {
   const n = Number(env.ACK_TIMEOUT_MINUTES);
   return Number.isFinite(n) && n > 0 ? n : 10;
+}
+
+/** Minutes during which a repeat of the same episode raises no new warning. 0 turns the cooldown off. */
+export function cooldownMinutes(env: Record<string, string | undefined> = process.env): number {
+  const n = Number(env.COOLDOWN_MINUTES);
+  return env.COOLDOWN_MINUTES !== undefined && env.COOLDOWN_MINUTES !== "" && Number.isFinite(n) && n >= 0 ? n : 5;
 }

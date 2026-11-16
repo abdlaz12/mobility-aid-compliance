@@ -11,7 +11,12 @@ Next.js (App Router, TypeScript, Tailwind) with Prisma and SQLite for developmen
 - Admin screens under `/dashboard/admin/patients` (FR1): add a patient, edit details, change the prescribed aid (history is kept), assign nurses and family members, discharge and reactivate.
 - Escalation (FR5.4): a Warning not acknowledged by its deadline (`ACK_TIMEOUT_MINUTES`, default 10) becomes Escalated, once, and the family is notified as well.
 - Notifications (FR5.1, FR5.2, NFR4): stored in a queue first, delivered afterwards with retry and backoff. The `log` channel (server log) is the default; Pushover is used for a user who has a `pushoverUserKey` when `PUSHOVER_APP_TOKEN` is set. Only room, aid status, time and initials/ID are sent, never a full name.
-- Not built yet: user management screens (including setting a Pushover key), patient history page, ReID enrolment, the cooldown for repeated alerts, a real-time channel (the dashboard refreshes every 15 s).
+- Cooldown (FR3.3): one warning per episode. Repeats of the same non-compliance within `COOLDOWN_MINUTES` (default 5) raise no new warning; being seen compliant ends the episode. Emergencies are never suppressed.
+- User management for admins (`/dashboard/admin/users`): create accounts, rename, deactivate and reactivate, reset a password. The role and the email are fixed after creation.
+- Account page for everyone (`/dashboard/account`): change your own password; nurses and family can save their Pushover key.
+- Login lock-out: 5 wrong passwords for one account in 15 minutes lock it for the rest of that window (an admin password reset lifts it). Unknown emails count too, so the lock does not reveal which accounts exist.
+- Patient history (`/dashboard/patients/{id}`): alerts and detections, newest first. Family see alerts only (no raw detections, no Info log).
+- Not built yet: ReID enrolment, a real-time channel (the dashboard refreshes every 15 s), password reset by email, ending a user's open session when their password is reset (deactivate the account to cut access at once), trend charts.
 
 ## Run it (PowerShell, in this folder, not WSL)
 ```
@@ -40,7 +45,7 @@ npm run test:integration    # escalation and the notification queue, on a tempor
 npm run test:access         # who may see and acknowledge what; needs the server running + seeded DB
 node ../tools/mock-generator/generate.mjs all    # sends sample detections (see tools/mock-generator)
 ```
-`test:access` signs in as each demo user and checks the role and patient-scope rules, including two nurses acknowledging the same alert at once, and the admin patient management (create, prescriptions, caregivers, discharge). It can be run repeatedly, but each run leaves a test patient (`T-...`) behind. To start clean: `npx prisma migrate reset` (drops the database, applies migrations and runs the seed).
+`test:access` also creates throwaway accounts and patients (each run leaves a few behind; `npx prisma migrate reset` cleans up). It signs in as each demo user and checks the role and patient-scope rules, including two nurses acknowledging the same alert at once, and the admin patient management (create, prescriptions, caregivers, discharge). It can be run repeatedly, but each run leaves a test patient (`T-...`) behind. To start clean: `npx prisma migrate reset` (drops the database, applies migrations and runs the seed).
 Useful: `npx prisma studio` opens a browser view of the database.
 
 ## Notes
@@ -52,6 +57,9 @@ Useful: `npx prisma studio` opens a browser view of the database.
 
 ## Background jobs
 A loop started in `src/instrumentation.ts` runs every 15 s: it escalates overdue warnings, then delivers queued notifications. It assumes one long-running server process (the lab server). On serverless hosting set `BACKGROUND_JOBS=off` and call `POST /api/jobs/run` (header `Authorization: Bearer <INTAKE_API_KEY>`) from a cron instead. To watch it work, start the server with a short deadline: `ACK_TIMEOUT_MINUTES=0.05 npm run dev`, send `node ../tools/mock-generator/generate.mjs noncompliant`, and read the `[notify:log]` lines in the server terminal.
+
+## Notes on login limits
+The lock-out counters live in memory: they fit the single server process this project runs on, a restart clears them, and several processes would each count separately. The per-IP limit (30 failures in 15 minutes) trusts the `x-forwarded-for` header, so it is only meaningful behind a proxy that sets it truthfully; the per-account limit does not depend on it.
 
 ## Authentication notes
 - `AUTH_SECRET` signs the session. Generate one with `npx auth secret`. The app refuses to start in production while it is the `dev-only` placeholder. Behind a proxy or on your own host set `AUTH_TRUST_HOST=true`.

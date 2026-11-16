@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { checkBearerKey } from "@/lib/api-key";
 import { validateDetectionEvent } from "@/lib/detection-validator";
 import { processDetection } from "@/lib/detection-intake";
+import { deliverQueued } from "@/lib/notify/queue";
 import { handle } from "@/lib/http";
 import { listReviewQueue, requireApiUser } from "@/lib/dal";
 
@@ -28,6 +29,9 @@ export async function POST(request: Request) {
   }
 
   const r = await processDetection(result.event);
+  // Deliver after the response is sent, so notification latency never slows intake (NFR1.1, NFR5.1).
+  // Anything that fails here stays queued and is retried by the background loop.
+  if (r.created && r.alertLevel) after(() => deliverQueued().catch((e) => console.error("[notify] delivery pass failed:", e instanceof Error ? e.message : e)));
   return NextResponse.json(
     {
       detection_id: r.detectionId,

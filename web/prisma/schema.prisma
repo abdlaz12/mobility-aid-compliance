@@ -14,13 +14,14 @@ datasource db {
 }
 
 model User {
-  id           Int      @id @default(autoincrement())
-  name         String
-  email        String   @unique
-  role         String // nurse / family / admin
-  passwordHash String? // scrypt hash (see src/lib/password.ts). null = cannot log in.
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  name            String
+  email           String   @unique
+  role            String // nurse / family / admin
+  passwordHash    String? // scrypt hash (see src/lib/password.ts). null = cannot log in.
+  pushoverUserKey String? // delivery token for Pushover notifications. Not a secret of the account, but keep it out of logs.
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
 
   contacts       PatientContact[]
   acknowledged   Alert[]          @relation("AcknowledgedBy")
@@ -168,8 +169,8 @@ model Notification {
   id            Int       @id @default(autoincrement())
   alertId       Int
   userId        Int // recipient
-  channel       String // pushover / web_push / sms / email
-  status        String    @default("queued") // queued / sent / failed
+  channel       String // log (development) / pushover / web_push / sms / email
+  status        String    @default("queued") // queued / sent / failed / skipped (alert was acknowledged first)
   attempts      Int       @default(0)
   lastAttemptAt DateTime?
 

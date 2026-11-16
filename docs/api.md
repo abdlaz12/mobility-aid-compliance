@@ -46,7 +46,9 @@ WebSocket (Socket.io), events pushed to the open dashboard:
 Clients only receive events for patients they are allowed to see.
 
 ## Implemented so far
-`POST /api/detections`, `GET /api/detections?needs_review=true`, `GET /api/patients`, `POST /api/patients`, `GET /api/patients/{id}`, `PATCH /api/patients/{id}`, `POST /api/patients/{id}/prescriptions`, `PUT /api/patients/{id}/contacts`, `GET /api/alerts`, `GET /api/alerts/{id}`, `POST /api/alerts/{id}/acknowledge`. Not yet: real-time updates.
+`POST /api/detections`, `GET /api/detections?needs_review=true`, `GET /api/patients`, `POST /api/patients`, `GET /api/patients/{id}`, `PATCH /api/patients/{id}`, `POST /api/patients/{id}/prescriptions`, `PUT /api/patients/{id}/contacts`, `GET /api/alerts`, `GET /api/alerts/{id}`, `POST /api/alerts/{id}/acknowledge`. `POST /api/jobs/run` (API key): one pass of escalation and notification delivery, for hosting without a long-running process. Not yet: real-time updates.
+
+Escalation and notifications: an alert created as `warning` has an `ackDeadline`; if it is still `pending` at that time its `level` becomes `escalated` and `escalatedAt` is set. `GET /api/alerts/{id}` lists the notifications (channel, status `queued`/`sent`/`failed`/`skipped`, attempts).
 
 Patient management notes: `POST /api/patients` takes `{code, name, initials?, age?, room?, aid}` and answers **409** for a code already used and **400** for invalid input or an unknown aid. `PATCH` changes only the keys sent, including `status: "discharged" | "active"`. `POST .../prescriptions` takes `{aid}`, closes the open prescription and answers **409** if that aid is already current. `PUT .../contacts` takes `{userIds: [...]}` and replaces the whole set; only active nurses and family members can be assigned (**400** otherwise). `GET /api/patients/{id}` returns prescription history and caregivers to admin only; a nurse or family member who is not assigned gets **403**.
 

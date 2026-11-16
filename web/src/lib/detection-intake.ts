@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { DetectionEvent } from "@/lib/detection-validator";
 import { ackDeadlineMinutes, evaluateDetection, readThresholds } from "@/lib/compliance";
+import { enqueueForAlert } from "@/lib/notify/queue";
 
 export type IntakeResult = {
   created: boolean;
@@ -80,7 +81,7 @@ export async function processDetection(e: DetectionEvent): Promise<IntakeResult>
 
   // The detection is already stored; a failure below must not lose it.
   if (decision.alertLevel && patient) {
-    await prisma.alert.create({
+    const alert = await prisma.alert.create({
       data: {
         patientId: patient.id,
         detectionId: detection.id,
@@ -93,6 +94,13 @@ export async function processDetection(e: DetectionEvent): Promise<IntakeResult>
         status: decision.alertLevel === "info" ? "closed" : "pending",
       },
     });
+    // Queue the notifications. A failure here must not turn an accepted event into an error:
+    // the alert is stored and shows on the dashboard.
+    try {
+      await enqueueForAlert(alert.id, decision.alertLevel);
+    } catch (e) {
+      console.error("[intake] could not queue notifications:", e instanceof Error ? e.message : e);
+    }
   }
 
   return {

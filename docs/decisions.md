@@ -28,6 +28,11 @@ Short record of decisions and the reason for each. Date format YYYY-MM-DD.
 | 2026-11-14 | **A caregiver's type (nurse or family) comes from the user's role**, and only active nurses and family members can be assigned | One source of truth; an admin or a deactivated user can never receive a patient's alerts. |
 | 2026-11-14 | **Discharge keeps all history; a discharged patient creates no alerts** (detections are still stored) | FR1.4. Deleting ReID embeddings on request is separate and comes with ReID enrolment (Sprint 2). |
 | 2026-11-14 | **Admin forms submit through `onSubmit`, not `action`** | React 19 clears every field after a form action finishes, which would wipe the input after a validation error. |
+| 2026-11-16 | **Escalation and delivery run in a loop started from `instrumentation.ts`** (every 15 s), with `POST /api/jobs/run` for cron-based hosting | Next.js has no scheduler. The lab runs one server process, so a loop is the simplest thing that works; the endpoint keeps the door open for serverless. Both are safe to run concurrently (each alert escalates once, each notification is claimed before sending). |
+| 2026-11-16 | **Notifications are queued, then sent**; failures retry (30 s, 60 s, 2 min, 4 min, then failed); a permanent error (bad key) fails at once; a notification for an alert that was acknowledged meanwhile is skipped | NFR4.1 and NFR4.2: a failed push must never lose a detection or an alert, and nobody should be pinged for something already handled. |
+| 2026-11-16 | **Warning goes to nurses; Escalated and Emergency go to nurses and family** | FR4.4. The nurse is told again at escalation on purpose. |
+| 2026-11-16 | **Notification text carries room, aid, time, initials and patient code only** | NFR3.3. The message builder is never given the full name, and a test checks it. Pushover priority is capped at 1 because priority 2 needs retry and expire settings. |
+| 2026-11-16 | **`log` channel by default, Pushover only when configured** | Nothing leaves the server unless an administrator sets `PUSHOVER_APP_TOKEN` and a user key. |
 
 ## Open decisions
 - **Real-time channel:** Socket.io on a separate small Node process, or Server-Sent Events. Next.js API routes usually cannot hold long-lived WebSocket connections.

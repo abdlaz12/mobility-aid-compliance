@@ -65,7 +65,8 @@ async function PendingAlerts({ user }: { user: SessionUser }) {
               </div>
               <p className="mt-2 font-medium">{a.patient.name} <span className="text-sm font-normal text-zinc-600 dark:text-zinc-400">({a.patient.code})</span></p>
               <p className="text-sm">Room {a.detection.roomId} · detected: <strong>{a.detection.aidLabel}</strong></p>
-              {a.ackDeadline && <p className="text-xs text-zinc-600 dark:text-zinc-400">Acknowledge before {fmt(a.ackDeadline)}</p>}
+              {a.level === "warning" && a.ackDeadline && <p className="text-xs text-zinc-600 dark:text-zinc-400">Acknowledge before {fmt(a.ackDeadline)}, or it escalates</p>}
+              {a.escalatedAt && <p className="text-xs font-medium text-orange-800 dark:text-orange-300">Escalated {fmt(a.escalatedAt)}: nurse and family were notified</p>}
               <form action={acknowledgeAction} className="mt-3">
                 <input type="hidden" name="alertId" value={a.id} />
                 <button type="submit" className="h-11 w-full rounded-md bg-zinc-900 px-4 text-base font-medium text-white sm:w-auto dark:bg-zinc-100 dark:text-zinc-900">

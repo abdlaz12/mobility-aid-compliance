@@ -178,3 +178,32 @@ test("user input: pushover key is 30 letters and digits, empty clears", () => {
   assert.equal(parsePushoverKey({ key: "a".repeat(30) }).ok, true);
   for (const bad of ["a".repeat(29), "a".repeat(31), "a".repeat(29) + "!", "<script>"]) assert.equal(parsePushoverKey({ key: bad }).ok, false);
 });
+
+
+import { readTextLimited } from "./http";
+test("validator: length limits and future timestamps", () => {
+  const e = (o: object) => validateDetectionEvent({ ...ok, ...o });
+  assert.equal(e({ room_id: "R".repeat(33) }).ok, false);
+  assert.equal(e({ room_id: "R".repeat(32) }).ok, true);
+  assert.equal(e({ room_id: "" }).ok, false);
+  assert.equal(e({ person_track_id: "t".repeat(65) }).ok, false);
+  assert.equal(e({ identity: { patient_id: "P".repeat(33), confidence: 0.9 } }).ok, false);
+  assert.equal(e({ aid: { label: "x".repeat(33), confidence: 0.9 } }).ok, false);
+  assert.equal(e({ aid: { label: "", confidence: 0.9 } }).ok, false);
+  assert.equal(e({ model_version: "v".repeat(65) }).ok, false);
+  const now = Date.parse("2026-11-03T14:22:05Z");
+  assert.equal(validateDetectionEvent(ok, now).ok, true, "a recorded replay in the past is fine");
+  assert.equal(validateDetectionEvent({ ...ok, timestamp: "2026-11-03T14:31:00Z" }, now).ok, true, "9 minutes ahead is tolerated (clock drift)");
+  assert.equal(validateDetectionEvent({ ...ok, timestamp: "2026-11-03T14:33:00Z" }, now).ok, false, "11 minutes ahead is refused");
+  assert.equal(validateDetectionEvent({ ...ok, timestamp: "2099-01-01T00:00:00Z" }, now).ok, false);
+});
+test("readTextLimited: reads small bodies, refuses large ones, with and without Content-Length", async () => {
+  const req = (body: string, headers: Record<string, string> = {}) => new Request("http://x/", { method: "POST", body, headers });
+  assert.equal(await readTextLimited(req("hello"), 10), "hello");
+  assert.equal(await readTextLimited(req("x".repeat(11)), 10), null, "over the limit");
+  assert.equal(await readTextLimited(req("x".repeat(10)), 10), "x".repeat(10), "exactly at the limit");
+  assert.equal(await readTextLimited(req("tiny", { "content-length": "999999" }), 10), null, "declared size is checked first");
+  const streamed = new Request("http://x/", { method: "POST", body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("x".repeat(6))); c.enqueue(new TextEncoder().encode("x".repeat(6))); c.close(); } }), duplex: "half" } as RequestInit);
+  assert.equal(await readTextLimited(streamed, 10), null, "a streamed body without Content-Length is cut off too");
+  assert.equal(await readTextLimited(new Request("http://x/"), 10), "", "no body");
+});

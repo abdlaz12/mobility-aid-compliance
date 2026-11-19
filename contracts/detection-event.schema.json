@@ -2,61 +2,99 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "detection-event.schema.json",
   "title": "Detection event",
-  "description": "One detection sent by the model service to the web Detection Intake API. DRAFT: the real output format of the Kirkby models has not been confirmed. Update this single file once it is, and the mock generator and the intake validator follow.",
+  "description": "One detection sent by the model service to the web Detection Intake API. DRAFT: the real output format of the Kirkby models has not been confirmed. Update this single file once it is, and the mock generator and the intake validator follow. Text fields have length limits so one malformed or hostile sender cannot fill the database.",
   "type": "object",
-  "required": ["event_id", "timestamp", "room_id", "person_track_id", "identity", "aid", "event_type"],
+  "required": [
+    "event_id",
+    "timestamp",
+    "room_id",
+    "person_track_id",
+    "identity",
+    "aid",
+    "event_type"
+  ],
   "additionalProperties": false,
   "properties": {
     "event_id": {
       "type": "string",
       "format": "uuid",
-      "description": "Unique per event. The intake API uses it to ignore duplicates."
+      "description": "Unique per event. The intake API uses it to ignore duplicates.",
+      "maxLength": 36
     },
     "timestamp": {
       "type": "string",
       "format": "date-time",
-      "description": "UTC, ISO 8601."
+      "description": "UTC, ISO 8601.",
+      "maxLength": 40
     },
     "room_id": {
       "type": "string",
-      "description": "Room or zone where the sensor captured the detection, for example R-204 or H-2 (hallway)."
+      "description": "Room or zone where the sensor captured the detection, for example R-204 or H-2 (hallway).",
+      "minLength": 1,
+      "maxLength": 32
     },
     "person_track_id": {
       "type": "string",
-      "description": "Identifier of the person within a short track, for example t-17."
+      "description": "Identifier of the person within a short track, for example t-17.",
+      "minLength": 1,
+      "maxLength": 64
     },
     "identity": {
       "type": "object",
-      "required": ["patient_id", "confidence"],
+      "required": [
+        "patient_id",
+        "confidence"
+      ],
       "additionalProperties": false,
       "properties": {
         "patient_id": {
-          "type": ["string", "null"],
-          "description": "Enrolled patient matched by ReID. null means an unknown person (staff or visitor)."
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Enrolled patient matched by ReID. null means an unknown person (staff or visitor).",
+          "maxLength": 32
         },
-        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
       }
     },
     "aid": {
       "type": "object",
-      "required": ["label", "confidence"],
+      "required": [
+        "label",
+        "confidence"
+      ],
       "additionalProperties": false,
       "properties": {
         "label": {
           "type": "string",
-          "description": "Detected mobility aid, for example none, cane, crutches, walker, wheelchair. The exact label set is to be confirmed with the Kirkby classification classes."
+          "description": "Detected mobility aid, for example none, cane, crutches, walker, wheelchair. The exact label set is to be confirmed with the Kirkby classification classes.",
+          "minLength": 1,
+          "maxLength": 32
         },
-        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
       }
     },
     "event_type": {
       "type": "string",
-      "enum": ["detection", "fall_indication"],
+      "enum": [
+        "detection",
+        "fall_indication"
+      ],
       "description": "fall_indication is accepted but never produced by this project."
     },
     "model_version": {
       "type": "string",
-      "description": "Optional. Version of the model that produced the event."
+      "description": "Optional. Version of the model that produced the event.",
+      "maxLength": 64
     }
   },
   "examples": [
@@ -65,8 +103,14 @@
       "timestamp": "2026-11-03T14:22:05Z",
       "room_id": "R-204",
       "person_track_id": "t-17",
-      "identity": { "patient_id": "P-0042", "confidence": 0.91 },
-      "aid": { "label": "none", "confidence": 0.97 },
+      "identity": {
+        "patient_id": "P-0042",
+        "confidence": 0.91
+      },
+      "aid": {
+        "label": "none",
+        "confidence": 0.97
+      },
       "event_type": "detection"
     },
     {
@@ -74,8 +118,14 @@
       "timestamp": "2026-11-03T14:25:40Z",
       "room_id": "H-2",
       "person_track_id": "t-21",
-      "identity": { "patient_id": null, "confidence": 0.31 },
-      "aid": { "label": "none", "confidence": 0.95 },
+      "identity": {
+        "patient_id": null,
+        "confidence": 0.31
+      },
+      "aid": {
+        "label": "none",
+        "confidence": 0.95
+      },
       "event_type": "detection"
     }
   ]

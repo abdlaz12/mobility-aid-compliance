@@ -3,7 +3,7 @@ import { checkBearerKey } from "@/lib/api-key";
 import { validateDetectionEvent } from "@/lib/detection-validator";
 import { processDetection } from "@/lib/detection-intake";
 import { deliverQueued } from "@/lib/notify/queue";
-import { handle } from "@/lib/http";
+import { handle, readTextLimited } from "@/lib/http";
 import { listReviewQueue, requireApiUser } from "@/lib/dal";
 
 /** POST /api/detections: receives one detection event (docs/api.md). */
@@ -16,9 +16,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing or wrong API key" }, { status: 401 });
   }
 
+  // One detection event is well under 1 KiB. 16 KiB leaves room and still stops abuse.
+  const text = await readTextLimited(request, 16 * 1024);
+  if (text === null) return NextResponse.json({ error: "Body is too large (16 KiB at most)" }, { status: 413 });
   let body: unknown;
   try {
-    body = await request.json();
+    body = JSON.parse(text);
   } catch {
     return NextResponse.json({ error: "Body is not valid JSON" }, { status: 400 });
   }

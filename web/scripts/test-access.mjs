@@ -268,6 +268,32 @@ try {
   const lockedId = (await (await admin("/api/users")).json()).users.find((u) => u.email === lockEmail).id;
   check("an admin password reset lifts the lock", (await call(admin, `/api/users/${lockedId}/password`, "POST", { password: "fresh long passphrase" })).status, 200);
   check("and the user can sign in again", await status(await login(lockEmail, "fresh long passphrase", fakeIp()), "/api/patients"), 200);
+
+  console.log("# intake input hardening");
+  const goodEvent = () => ({
+    event_id: randomUUID(), timestamp: new Date().toISOString(), room_id: "R-204", person_track_id: "t-1",
+    identity: { patient_id: "P-0042", confidence: 0.95 }, aid: { label: "walker", confidence: 0.95 }, event_type: "detection",
+  });
+  const raw = (text, extra = {}) => fetch(`${BASE}/api/detections`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}`, ...extra }, body: text }).then((r) => r.status);
+  const post = (o) => raw(JSON.stringify({ ...goodEvent(), ...o }));
+  check("a normal event is accepted", await post({}), 201);
+  check("a 20 KiB body is refused (413)", await raw(JSON.stringify({ ...goodEvent(), model_version: "x".repeat(20 * 1024) })), 413);
+  check("a long room_id is refused", await post({ room_id: "R".repeat(33) }), 400);
+  check("a long aid label is refused", await post({ aid: { label: "x".repeat(33), confidence: 0.9 } }), 400);
+  check("an empty room_id is refused", await post({ room_id: "" }), 400);
+  check("a timestamp from the future is refused", await post({ timestamp: new Date(Date.now() + 3600_000).toISOString() }), 400);
+  check("a recorded replay in the past is accepted", await post({ timestamp: "2026-01-02T03:04:05Z" }), 201);
+  check("confidence as a string is refused", await post({ aid: { label: "walker", confidence: "0.9" } }), 400);
+  check("confidence above 1 is refused", await post({ identity: { patient_id: "P-0042", confidence: 1.5 } }), 400);
+  check("an unknown extra field is refused", await post({ surprise: 1 }), 400);
+  for (const [name, text] of [["an array", "[]"], ["null", "null"], ["a string", '"x"'], ["a number", "7"], ["broken JSON", "{oops"], ["an empty body", ""]]) {
+    check(`${name} as the body is refused`, await raw(text), 400);
+  }
+  const injection = await fetch(`${BASE}/api/detections`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
+    body: JSON.stringify({ ...goodEvent(), identity: { patient_id: "' OR '1'='1", confidence: 0.9 } }) });
+  const injected = await injection.json();
+  check("an SQL-looking patient code is just an unknown code (stored, flagged for review)", [injection.status, injected.needs_review, injected.alert_level], [201, true, null]);
+  check("and the database is intact", (await pat(admin)).length >= 2, true);
 } catch (e) {
   console.error(`Could not run the test against ${BASE}: ${e.cause?.code ?? e.message}`);
   process.exit(2);

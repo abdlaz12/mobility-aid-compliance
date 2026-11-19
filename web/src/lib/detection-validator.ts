@@ -26,8 +26,16 @@ export type ValidationResult =
   | { ok: true; event: DetectionEvent }
   | { ok: false; errors: string[] };
 
-export function validateDetectionEvent(payload: unknown): ValidationResult {
-  if (validate(payload)) return { ok: true, event: payload };
+/** Events may be replays of recorded data (past timestamps are fine), but not from the future. */
+export const MAX_FUTURE_MS = 10 * 60_000;
+
+export function validateDetectionEvent(payload: unknown, now: number = Date.now()): ValidationResult {
+  if (validate(payload)) {
+    if (Date.parse(payload.timestamp) > now + MAX_FUTURE_MS) {
+      return { ok: false, errors: ["/timestamp is more than 10 minutes in the future"] };
+    }
+    return { ok: true, event: payload };
+  }
   const errors = (validate.errors ?? []).map(
     (e) => `${e.instancePath || "(body)"} ${e.message ?? "is invalid"}`,
   );

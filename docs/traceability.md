@@ -32,7 +32,7 @@ Test names: *unit* = `web/src/lib/*.test.ts`, *integration* = `web/src/lib/escal
 | FR7 activity recognition (stretch) | Not started | |
 | FR8 mobility trends (stretch) | Not started | |
 | FR9.1 real-time dashboard | Partial | Dashboard works and refreshes every 15 s. No push channel (Server-Sent Events or Socket.io undecided). |
-| FR9.2 role-based access | Done | access (about 130 checks across roles) |
+| FR9.2 role-based access | Done | access (the 222 access checks cover every role against every endpoint area) |
 | FR9.3 weekly reports (stretch) | Not started | |
 | FR9.4 trend charts (stretch) | Not started | |
 | FR10 person segmentation | Not applicable | ML contribution, not in the web system |

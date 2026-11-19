@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { DetectionEvent } from "@/lib/detection-validator";
-import { ackDeadlineMinutes, cooldownMinutes, evaluateDetection, readThresholds } from "@/lib/compliance";
+import { evaluateDetection } from "@/lib/compliance";
+import { getSettings } from "@/lib/settings";
 import { enqueueForAlert } from "@/lib/notify/queue";
 
 export type IntakeResult = {
@@ -16,8 +17,7 @@ export type IntakeResult = {
  * FR3.3: is this detection part of an episode that already raised a warning? An episode lasts until the
  * cooldown runs out, or until the patient is seen compliant again (an Info entry after the warning).
  */
-async function inCooldown(patientId: number): Promise<boolean> {
-  const minutes = cooldownMinutes();
+async function inCooldown(patientId: number, minutes: number): Promise<boolean> {
   if (minutes <= 0) return false;
   const since = new Date(Date.now() - minutes * 60_000);
   const risk = await prisma.alert.findFirst({
@@ -40,6 +40,7 @@ export async function processDetection(e: DetectionEvent): Promise<IntakeResult>
     return { created: false, detectionId: existing.id, needsReview: existing.needsReview, alertLevel: null, reason: "duplicate" };
   }
 
+  const settings = await getSettings(); // thresholds, cooldown and timeout an admin may have changed
   const [zone, patient, aid] = await Promise.all([
     prisma.zone.findUnique({ where: { zoneName: e.room_id } }),
     e.identity.patient_id ? prisma.patient.findUnique({ where: { code: e.identity.patient_id } }) : null,
@@ -65,9 +66,9 @@ export async function processDetection(e: DetectionEvent): Promise<IntakeResult>
       aidConfidence: e.aid.confidence,
       aidKnown: aid !== null,
       prescribedAid: prescription?.mobilityAid.name ?? null,
-      inCooldown: patient ? await inCooldown(patient.id) : false,
+      inCooldown: patient ? await inCooldown(patient.id, settings.cooldownMinutes) : false,
     },
-    readThresholds(),
+    { identity: settings.identityConfidenceThreshold, aid: settings.aidConfidenceThreshold },
   );
 
   let detection;
@@ -108,7 +109,7 @@ export async function processDetection(e: DetectionEvent): Promise<IntakeResult>
         // Only a warning waits for acknowledgement and can escalate (FR5.4).
         ackDeadline:
           decision.alertLevel === "warning"
-            ? new Date(Date.now() + ackDeadlineMinutes() * 60_000)
+            ? new Date(Date.now() + settings.ackTimeoutMinutes * 60_000)
             : null,
         status: decision.alertLevel === "info" ? "closed" : "pending",
       },

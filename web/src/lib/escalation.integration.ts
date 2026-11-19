@@ -59,6 +59,7 @@ before(async () => {
 // Every test starts from a quiet database: no alerts, nothing queued, patients admitted.
 beforeEach(async () => {
   await m.prisma.notification.deleteMany();
+  await m.prisma.setting.deleteMany(); // every test starts from the defaults and the environment
   await m.prisma.alert.deleteMany(); // old alerts would count as part of an episode (cooldown)
   await m.prisma.patient.updateMany({ data: { status: "active" } });
 });
@@ -215,4 +216,53 @@ test("cooldown: emergencies are never suppressed, and 0 turns the cooldown off",
     assert.equal(await level("P-0043", "none"), "warning");
     assert.equal(await level("P-0043", "none"), "warning");
   });
+});
+
+
+// ---- Settings stored in the database (NFR5.2) ----------------------------------------------------------
+const setSetting = (key: string, value: unknown) =>
+  m.prisma.setting.upsert({ where: { key }, update: { value: JSON.stringify(value) }, create: { key, value: JSON.stringify(value) } });
+
+test("settings: a raised identity threshold sends a detection to review, and deleting it restores the default", async () => {
+  await setSetting("identityConfidenceThreshold", 0.99);
+  const strict = await m.processDetection(ev("P-0042", "none")); // identity confidence 0.95 < 0.99
+  assert.deepEqual([strict.alertLevel, strict.needsReview], [null, true]);
+  await m.prisma.setting.deleteMany();
+  assert.equal((await m.processDetection(ev("P-0042", "none"))).alertLevel, "warning");
+});
+
+test("settings: the database cooldown beats the environment", () => withCooldown("0", async () => {
+  await setSetting("cooldownMinutes", 5);
+  assert.equal(await level("P-0042", "none"), "warning");
+  assert.equal(await level("P-0042", "none"), null, "suppressed although the environment says 0");
+}));
+
+test("settings: the acknowledgement timeout sets the deadline of new warnings", async () => {
+  await setSetting("ackTimeoutMinutes", 3);
+  const r = await m.processDetection(ev("P-0042", "none"));
+  const alert = await m.prisma.alert.findFirstOrThrow({ where: { detectionId: r.detectionId } });
+  const minutes = (alert.ackDeadline!.getTime() - alert.createdAt.getTime()) / 60_000;
+  assert.ok(minutes > 2.9 && minutes < 3.1, `deadline was ${minutes} minutes after creation`);
+});
+
+test("settings: routing decides who is told, here the family already on a Warning", async () => {
+  await setSetting("routing", { warning: ["nurse", "family"], escalated: ["nurse", "family"], emergency: ["nurse", "family"] });
+  const r = await m.processDetection(ev("P-0042", "none"));
+  const alert = await m.prisma.alert.findFirstOrThrow({ where: { detectionId: r.detectionId } });
+  assert.deepEqual(emailsOf(await notes(alert.id)), ["family@example.test", "nurse@example.test"]);
+});
+
+test("settings: a routing that reaches only the family never reaches the nurse", async () => {
+  await setSetting("routing", { warning: ["family"], escalated: ["family"], emergency: ["family"] });
+  const r = await m.processDetection(ev("P-0042", "none"));
+  const alert = await m.prisma.alert.findFirstOrThrow({ where: { detectionId: r.detectionId } });
+  assert.deepEqual(emailsOf(await notes(alert.id)), ["family@example.test"]);
+});
+
+test("settings: a corrupt stored value is ignored and the default applies", async () => {
+  await m.prisma.setting.create({ data: { key: "routing", value: "{not json" } });
+  await m.prisma.setting.create({ data: { key: "cooldownMinutes", value: "\"soon\"" } });
+  const r = await m.processDetection(ev("P-0042", "none"));
+  const alert = await m.prisma.alert.findFirstOrThrow({ where: { detectionId: r.detectionId } });
+  assert.deepEqual(emailsOf(await notes(alert.id)), ["nurse@example.test"], "default routing: nurse only on a warning");
 });

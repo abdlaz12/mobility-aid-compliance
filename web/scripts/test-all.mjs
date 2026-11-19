@@ -70,7 +70,12 @@ function run(name, nodeArgs, opts = {}) {
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
   results.push({ name, ok, secs, note: ok ? summary(out) : "" });
   console.log(`${ok ? "ok" : "FAILED"} (${secs}s)`);
-  if (!ok) console.log(tail(out, 60));
+  if (!ok) {
+    // Show every failed check, not only what happens to be in the last lines of a long output.
+    const failedLines = out.split("\n").filter((l) => /^(FAIL|not ok)\b/.test(l));
+    if (failedLines.length) console.log(failedLines.join("\n"));
+    console.log(tail(out, failedLines.length ? 8 : 60));
+  }
   return ok;
 }
 

@@ -192,3 +192,14 @@ model AudioReminder {
 
   @@map("audio_reminders")
 }
+
+// Administrator-editable settings (NFR5.2): thresholds, cooldown, acknowledgement timeout, routing.
+// One row per key; the value is JSON text. A missing row means "use the environment variable or the default".
+model Setting {
+  key         String   @id
+  value       String
+  updatedAt   DateTime @updatedAt
+  updatedById Int?
+
+  @@map("settings")
+}

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cooldownMinutes, evaluateDetection, type ComplianceInput } from "./compliance";
+import { evaluateDetection, type ComplianceInput } from "./compliance";
 import { validateDetectionEvent } from "./detection-validator";
 import { checkBearerKey } from "./api-key";
 
@@ -22,9 +22,6 @@ test("repeat within the cooldown -> no new warning; matching aid and emergencies
   assert.deepEqual([d.alertLevel, d.needsReview], [null, false]);
   assert.equal(evaluateDetection({ ...base, inCooldown: true }, T).alertLevel, "info");
   assert.equal(evaluateDetection({ ...base, eventType: "fall_indication", inCooldown: true }, T).alertLevel, "emergency");
-});
-test("cooldown setting: default 5, 0 disables, junk falls back", () => {
-  assert.deepEqual([cooldownMinutes({}), cooldownMinutes({ COOLDOWN_MINUTES: "0" }), cooldownMinutes({ COOLDOWN_MINUTES: "2.5" }), cooldownMinutes({ COOLDOWN_MINUTES: "abc" }), cooldownMinutes({ COOLDOWN_MINUTES: "-3" })], [5, 0, 2.5, 5, 5]);
 });
 test("unknown person -> no alert, no review", () => {
   const d = evaluateDetection({ ...base, identified: false, patientKnown: false }, T);
@@ -206,4 +203,45 @@ test("readTextLimited: reads small bodies, refuses large ones, with and without 
   const streamed = new Request("http://x/", { method: "POST", body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("x".repeat(6))); c.enqueue(new TextEncoder().encode("x".repeat(6))); c.close(); } }), duplex: "half" } as RequestInit);
   assert.equal(await readTextLimited(streamed, 10), null, "a streamed body without Content-Length is cut off too");
   assert.equal(await readTextLimited(new Request("http://x/"), 10), "", "no body");
+});
+
+
+import { DEFAULTS, parseSettingsUpdate, resolveSettings } from "./settings";
+const row = (key: string, value: unknown) => ({ key, value: JSON.stringify(value) });
+test("settings: defaults follow proposal v3 (cooldown 10, identity threshold 0.80)", () => {
+  const s = resolveSettings([], {});
+  assert.deepEqual([s.cooldownMinutes, s.identityConfidenceThreshold, s.aidConfidenceThreshold, s.ackTimeoutMinutes], [10, 0.8, 0.6, 10]);
+  assert.deepEqual(s.routing, DEFAULTS.routing);
+});
+test("settings: database beats environment, environment beats default", () => {
+  const env = { COOLDOWN_MINUTES: "3", ACK_TIMEOUT_MINUTES: "0.05" };
+  assert.equal(resolveSettings([], env).cooldownMinutes, 3);
+  assert.equal(resolveSettings([row("cooldownMinutes", 7)], env).cooldownMinutes, 7);
+  assert.equal(resolveSettings([], env).ackTimeoutMinutes, 0.05, "the environment may use a short timeout for demos");
+  assert.equal(resolveSettings([row("cooldownMinutes", 0)], env).cooldownMinutes, 0, "0 is a real value, not 'unset'");
+});
+test("settings: junk in the environment or the database never wins", () => {
+  assert.equal(resolveSettings([], { COOLDOWN_MINUTES: "abc" }).cooldownMinutes, 10);
+  assert.equal(resolveSettings([], { COOLDOWN_MINUTES: "-4" }).cooldownMinutes, 10);
+  assert.equal(resolveSettings([{ key: "cooldownMinutes", value: "not json" }], {}).cooldownMinutes, 10);
+  assert.equal(resolveSettings([row("cooldownMinutes", "7")], {}).cooldownMinutes, 10, "a string is not a number");
+  assert.equal(resolveSettings([row("identityConfidenceThreshold", 5)], {}).identityConfidenceThreshold, 0.8, "out of range");
+  assert.deepEqual(resolveSettings([row("routing", { warning: [], escalated: ["nurse"], emergency: ["nurse"] })], {}).routing, DEFAULTS.routing, "an empty route is never accepted");
+  assert.deepEqual(resolveSettings([{ key: "routing", value: "{" }], {}).routing, DEFAULTS.routing);
+});
+test("settings update: accepts values in range, rejects the rest", () => {
+  assert.deepEqual(parseSettingsUpdate({ cooldownMinutes: 5, identityConfidenceThreshold: 0.9 }), { ok: true, value: { cooldownMinutes: 5, identityConfidenceThreshold: 0.9 } });
+  for (const bad of [{ cooldownMinutes: -1 }, { cooldownMinutes: 1441 }, { cooldownMinutes: "5" }, { cooldownMinutes: null }, { cooldownMinutes: Infinity },
+    { identityConfidenceThreshold: 1.1 }, { aidConfidenceThreshold: -0.1 }, { ackTimeoutMinutes: 0 }, { ackTimeoutMinutes: 0.5 }, { nope: 1 }, {}]) {
+    assert.equal(parseSettingsUpdate(bad as Record<string, unknown>).ok, false, JSON.stringify(bad));
+  }
+  assert.equal(parseSettingsUpdate({ cooldownMinutes: 0 }).ok, true);
+});
+test("settings update: routing needs all three levels, each with at least one valid recipient", () => {
+  const good = { warning: ["nurse"], escalated: ["nurse", "family"], emergency: ["family", "nurse"] };
+  assert.equal(parseSettingsUpdate({ routing: good }).ok, true);
+  for (const bad of [{ ...good, emergency: [] }, { ...good, warning: ["admin"] }, { ...good, warning: ["nurse", "nurse"] }, { warning: ["nurse"], escalated: ["nurse"] },
+    { ...good, info: ["nurse"] }, { ...good, warning: "nurse" }, "nurse", null, []]) {
+    assert.equal(parseSettingsUpdate({ routing: bad }).ok, false, JSON.stringify(bad));
+  }
 });

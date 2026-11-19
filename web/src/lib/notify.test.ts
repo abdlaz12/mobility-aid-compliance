@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { buildMessage } from "./notify/message";
 import { channelNameFor, pushoverChannel } from "./notify/channels";
 import { backoffMs, recipientTypes } from "./notify/queue";
+import { DEFAULTS } from "./settings";
 
 const input = { level: "warning", initials: "A.A.", code: "P-0042", roomId: "R-204", aidLabel: "none", timestamp: new Date("2026-11-03T14:22:05Z") };
 
@@ -21,10 +22,12 @@ test("message priority: escalated and emergency are urgent, warning is normal, n
   assert.equal(buildMessage({ ...input, level: "emergency" }).priority, 1);
 });
 test("who is told: nurses for a warning, nurses and family when escalated or emergency, nobody for info", () => {
-  assert.deepEqual(recipientTypes("warning"), ["nurse"]);
-  assert.deepEqual(recipientTypes("escalated"), ["nurse", "family"]);
-  assert.deepEqual(recipientTypes("emergency"), ["nurse", "family"]);
-  assert.deepEqual(recipientTypes("info"), []);
+  const r = DEFAULTS.routing;
+  assert.deepEqual(recipientTypes("warning", r), ["nurse"]);
+  assert.deepEqual(recipientTypes("escalated", r), ["nurse", "family"]);
+  assert.deepEqual(recipientTypes("emergency", r), ["nurse", "family"]);
+  assert.deepEqual(recipientTypes("info", r), []);
+  assert.deepEqual(recipientTypes("warning", { ...r, warning: ["nurse", "family"] }), ["nurse", "family"], "routing is configurable");
 });
 test("backoff doubles from 30 s and is capped", () => {
   assert.deepEqual([1, 2, 3, 4].map(backoffMs), [30_000, 60_000, 120_000, 240_000]);

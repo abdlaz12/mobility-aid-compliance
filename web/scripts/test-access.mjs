@@ -269,11 +269,41 @@ try {
   check("an admin password reset lifts the lock", (await call(admin, `/api/users/${lockedId}/password`, "POST", { password: "fresh long passphrase" })).status, 200);
   check("and the user can sign in again", await status(await login(lockEmail, "fresh long passphrase", fakeIp()), "/api/patients"), 200);
 
-  console.log("# intake input hardening");
   const goodEvent = () => ({
     event_id: randomUUID(), timestamp: new Date().toISOString(), room_id: "R-204", person_track_id: "t-1",
     identity: { patient_id: "P-0042", confidence: 0.95 }, aid: { label: "walker", confidence: 0.95 }, event_type: "detection",
   });
+
+  console.log("# settings (admin only)");
+  check("anonymous cannot read settings", await status(anon, "/api/settings"), 401);
+  check("nurse cannot read settings", await status(nurse, "/api/settings"), 403);
+  check("family cannot change settings", (await call(family, "/api/settings", "PUT", { cooldownMinutes: 1 })).status, 403);
+  check("nurse cannot reset settings", await status(nurse, "/api/settings", "DELETE"), 403);
+  try {
+    const base = await (await admin("/api/settings")).json();
+    check("defaults follow the proposal (cooldown 10, identity threshold 0.8)", [base.defaults.cooldownMinutes, base.defaults.identityConfidenceThreshold], [10, 0.8]);
+    for (const [name, o] of [["negative cooldown", { cooldownMinutes: -1 }], ["cooldown as a string", { cooldownMinutes: "5" }], ["threshold above 1", { identityConfidenceThreshold: 1.5 }],
+      ["unknown setting", { nonsense: 1 }], ["empty update", {}], ["routing without a recipient for emergencies", { routing: { warning: ["nurse"], escalated: ["nurse"], emergency: [] } }],
+      ["routing with an unknown role", { routing: { warning: ["admin"], escalated: ["nurse"], emergency: ["nurse"] } }]]) {
+      check(`${name} is refused`, (await call(admin, "/api/settings", "PUT", o)).status, 400);
+    }
+    check("refused updates changed nothing", (await (await admin("/api/settings")).json()).changed.length, 0);
+    const changed = await call(admin, "/api/settings", "PUT", { identityConfidenceThreshold: 0.99, cooldownMinutes: 3 });
+    const after = await changed.json();
+    check("admin changes two settings", [changed.status, after.settings.identityConfidenceThreshold, after.settings.cooldownMinutes], [200, 0.99, 3]);
+    check("the response lists what was changed", after.changed, ["cooldownMinutes", "identityConfidenceThreshold"]);
+    const strict = await (await fetch(`${BASE}/api/detections`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` }, body: JSON.stringify(goodEvent()) })).json();
+    check("the new threshold applies to the next detection (0.95 is now too low)", [strict.needs_review, strict.alert_level], [true, null]);
+    check("routing can be changed", (await call(admin, "/api/settings", "PUT", { routing: { warning: ["nurse", "family"], escalated: ["nurse", "family"], emergency: ["nurse", "family"] } })).status, 200);
+    check("and is stored as sent", (await (await admin("/api/settings")).json()).settings.routing.warning, ["nurse", "family"]);
+    check("resetting an unknown key is refused", await status(admin, "/api/settings?keys=nope", "DELETE"), 400);
+    const partial = await (await admin("/api/settings?keys=identityConfidenceThreshold", { method: "DELETE" })).json();
+    check("resetting one key leaves the others", partial.changed, ["cooldownMinutes", "routing"]);
+    check("the threshold is back to what it was before (the environment or the default)", partial.settings.identityConfidenceThreshold, base.settings.identityConfidenceThreshold);
+  } finally {
+    check("reset all settings (always, so other tests are unaffected)", await status(admin, "/api/settings", "DELETE"), 200);
+  }
+  console.log("# intake input hardening");
   const raw = (text, extra = {}) => fetch(`${BASE}/api/detections`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}`, ...extra }, body: text }).then((r) => r.status);
   const post = (o) => raw(JSON.stringify({ ...goodEvent(), ...o }));
   check("a normal event is accepted", await post({}), 201);

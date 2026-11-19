@@ -72,25 +72,3 @@ export function evaluateDetection(i: ComplianceInput, t: Thresholds): Compliance
     reason: `detected ${i.aidLabel}, prescribed ${i.prescribedAid}`,
   };
 }
-
-export function readThresholds(env: NodeJS.ProcessEnv = process.env): Thresholds {
-  const num = (v: string | undefined, d: number) => {
-    const n = Number(v);
-    return v !== undefined && v !== "" && Number.isFinite(n) ? n : d;
-  };
-  return {
-    identity: num(env.IDENTITY_CONFIDENCE_THRESHOLD, 0.6),
-    aid: num(env.AID_CONFIDENCE_THRESHOLD, 0.6),
-  };
-}
-
-export function ackDeadlineMinutes(env: NodeJS.ProcessEnv = process.env): number {
-  const n = Number(env.ACK_TIMEOUT_MINUTES);
-  return Number.isFinite(n) && n > 0 ? n : 10;
-}
-
-/** Minutes during which a repeat of the same episode raises no new warning. 0 turns the cooldown off. */
-export function cooldownMinutes(env: Record<string, string | undefined> = process.env): number {
-  const n = Number(env.COOLDOWN_MINUTES);
-  return env.COOLDOWN_MINUTES !== undefined && env.COOLDOWN_MINUTES !== "" && Number.isFinite(n) && n >= 0 ? n : 5;
-}

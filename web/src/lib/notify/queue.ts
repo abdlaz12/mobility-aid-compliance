@@ -3,18 +3,19 @@
 import { prisma } from "@/lib/prisma";
 import { channelNameFor, defaultChannels, type Channel } from "./channels";
 import { buildMessage } from "./message";
+import { getSettings, type Routing } from "@/lib/settings";
 
 export const MAX_ATTEMPTS = 5;
 
 /** Wait before the next try: 30 s, 60 s, 2 min, 4 min (capped at 15 min). */
 export const backoffMs = (attempts: number) => Math.min(30_000 * 2 ** Math.max(0, attempts - 1), 15 * 60_000);
 
-/** FR4.4: a Warning goes to the assigned nurses; Escalated and Emergency also reach the family. */
-export const recipientTypes = (level: string): string[] =>
-  level === "warning" ? ["nurse"] : level === "escalated" || level === "emergency" ? ["nurse", "family"] : [];
+/** FR4.4: who is told for a level. Info is a silent log entry. The rest comes from the routing setting. */
+export const recipientTypes = (level: string, routing: Routing): string[] =>
+  level === "warning" || level === "escalated" || level === "emergency" ? routing[level] : [];
 
 export async function enqueueForAlert(alertId: number, level: string): Promise<number> {
-  const types = recipientTypes(level);
+  const types = recipientTypes(level, (await getSettings()).routing);
   const alert = await prisma.alert.findUnique({ where: { id: alertId }, select: { patientId: true } });
   if (!types.length || !alert) return 0;
   const contacts = await prisma.patientContact.findMany({

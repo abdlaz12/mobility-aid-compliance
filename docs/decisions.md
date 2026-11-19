@@ -45,6 +45,9 @@ Short record of decisions and the reason for each. Date format YYYY-MM-DD.
 | 2026-11-19 | **The backend stores references to ReID samples, not embeddings or point clouds**; the model service produces and holds the data | Matches the architecture in proposal 3.5 (inference on a separate service) and keeps biometric data out of the web database. |
 | 2026-11-19 | **Embeddings are deleted on discharge and when consent is withdrawn; the consent record and the history stay** | Proposal section 7. Reactivating a patient needs new samples. Consent is optional at registration but required to enrol; the registration form should ask for it. |
 | 2026-11-19 | **The model service reads the gallery through `GET /api/reid/gallery` with the shared API key** | One small, auditable path for biometric references, closed to sessions. |
+| 2026-11-19 | **Latency is measured from `Detection.receivedAt` to `Notification.sentAt`, for notifications triggered by intake only** | That is the interval NFR1.1 defines. Escalations are timer driven and would swamp the numbers. The load test uses 10 patients and 1,100 notifications (proposal 6.2 asks for at least 1,000). |
+| 2026-11-19 | **Scripted scenarios are data (`scripts/scenarios/scripted.json`), boundary cases are built from the live settings** | New cases are added without code; boundaries stay correct when an admin changes a threshold. |
+| 2026-11-19 | **One command (`npm run test:all`) runs everything on a throwaway database and a separate build folder** | Nothing touches development data, a running dev server is undisturbed, and CI runs the same thing. |
 
 ## Open decisions
 - **Real-time channel:** Socket.io on a separate small Node process, or Server-Sent Events. Next.js API routes usually cannot hold long-lived WebSocket connections.

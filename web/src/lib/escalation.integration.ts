@@ -405,3 +405,33 @@ test("reid: the model-service gallery lists only admitted, consenting patients",
   const mine = (await m.reid.galleryForModelService()).find((g) => g.patient_code === ok.code)!;
   assert.deepEqual([mine.embedding_ref, mine.aid, mine.assisted], [`ref/${ok.id}`, "walker", true]);
 });
+
+
+// ---- Escalation reliability (proposal 6.2: an unacknowledged Warning escalates in 100% of test cases) ------
+test("escalation: 100 overdue warnings all escalate, nothing that is not overdue or already handled does", async () => {
+  const overdue: number[] = [], future: number[] = [], handled: number[] = [];
+  for (let i = 0; i < 100; i++) overdue.push(await warningFor("P-0042"));
+  for (let i = 0; i < 10; i++) future.push(await warningFor("P-0043"));
+  for (let i = 0; i < 10; i++) handled.push(await warningFor("P-0043", "acknowledged"));
+  await m.prisma.alert.updateMany({ where: { id: { in: [...overdue, ...handled] } }, data: { ackDeadline: PAST() } });
+  assert.equal(await m.escalateOverdueAlerts(), 100);
+  const levelsOf = async (ids: number[]) => (await m.prisma.alert.findMany({ where: { id: { in: ids } } })).map((a) => a.level);
+  assert.ok((await levelsOf(overdue)).every((l) => l === "escalated"), "every overdue warning escalated");
+  assert.ok((await levelsOf(future)).every((l) => l === "warning"), "a warning inside its window is untouched");
+  assert.ok((await levelsOf(handled)).every((l) => l === "warning"), "an acknowledged warning is untouched");
+  assert.equal(await m.escalateOverdueAlerts(), 0, "a second pass escalates nothing");
+  // each escalation told the nurse and the family once
+  assert.equal(await m.prisma.notification.count({ where: { alertId: { in: overdue }, trigger: "escalation" } }), 200);
+});
+
+test("notifications: only intake notifications count towards the latency target", async () => {
+  const id = await warningFor("P-0042");
+  await m.deliverQueued({ channels: recorder().channels });
+  await m.prisma.alert.update({ where: { id }, data: { ackDeadline: PAST() } });
+  await m.escalateOverdueAlerts();
+  await m.deliverQueued({ channels: recorder().channels });
+  const all = await notes(id);
+  const byTrigger = (t: string) => all.filter((n) => n.trigger === t).length;
+  assert.deepEqual([byTrigger("intake"), byTrigger("escalation")], [1, 2]);
+  assert.ok(all.every((n) => n.status === "sent" && n.sentAt !== null), "sent notifications carry their sent time");
+});

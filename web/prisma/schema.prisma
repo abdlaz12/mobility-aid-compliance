@@ -176,6 +176,9 @@ model Notification {
   status        String    @default("queued") // queued / sent / failed / skipped (alert was acknowledged first)
   attempts      Int       @default(0)
   lastAttemptAt DateTime?
+  createdAt     DateTime  @default(now())
+  sentAt        DateTime? // when the channel accepted it; with Detection.receivedAt this gives the NFR1.1 latency
+  trigger       String    @default("intake") // intake / escalation: only intake notifications count for NFR1.1
 
   alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id])

@@ -267,3 +267,21 @@ test("ReID sample: a plain reference, an aid state and an assisted flag", () => 
     assert.equal(parseReidSample({ aid: "none", ...bad }).ok, false, JSON.stringify(bad));
   }
 });
+
+
+import { percentile, summarise } from "./metrics";
+test("metrics: nearest-rank percentiles", () => {
+  const xs = Array.from({ length: 100 }, (_, i) => i + 1); // 1..100
+  assert.deepEqual([percentile(xs, 0.5), percentile(xs, 0.95), percentile(xs, 1), percentile(xs, 0.01)], [50, 95, 100, 1]);
+  assert.equal(percentile([7], 0.95), 7);
+  assert.ok(Number.isNaN(percentile([], 0.5)));
+  assert.equal(percentile([1, 2, 3, 4], 0.5), 2);
+  assert.equal(percentile([1, 2, 3, 4], 0.75), 3);
+});
+test("metrics: summary against the 5 second target", () => {
+  const s = summarise([100, 200, 300, 5000, 5001]);
+  assert.deepEqual([s.count, s.p50Ms, s.maxMs, s.withinTargetPct, s.targetMs], [5, 300, 5001, 80, 5000]);
+  assert.deepEqual(summarise([]), { count: 0, p50Ms: null, p95Ms: null, maxMs: null, withinTargetPct: null, targetMs: 5000 });
+  assert.equal(summarise(Array(95).fill(10).concat(Array(5).fill(9000))).p95Ms, 10, "exactly 5% slow events leave the 95th percentile fast");
+  assert.equal(summarise(Array(94).fill(10).concat(Array(6).fill(9000))).p95Ms, 9000, "6% slow events push it over");
+});

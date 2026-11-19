@@ -13,7 +13,7 @@ export async function escalateOverdueAlerts(now: Date = new Date()): Promise<num
     const { count } = await prisma.alert.updateMany({ where: { ...where, id }, data: { level: "escalated", escalatedAt: now } });
     if (count !== 1) continue;
     escalated++;
-    await enqueueForAlert(id, "escalated");
+    await enqueueForAlert(id, "escalated", "escalation");
   }
   return escalated;
 }

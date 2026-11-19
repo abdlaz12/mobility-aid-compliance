@@ -7,7 +7,7 @@
 // Works on Linux, macOS and Windows: tools are started through node, not through a shell.
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -42,6 +42,11 @@ const env = {
   AUTH_TRUST_HOST: "true",
   INTAKE_API_KEY,
   BACKGROUND_JOBS: "off", // the scripted tests drive escalation and delivery themselves
+  // Empty values keep a developer's own .env from changing the settings the tests expect (Next does not override them).
+  IDENTITY_CONFIDENCE_THRESHOLD: "",
+  AID_CONFIDENCE_THRESHOLD: "",
+  ACK_TIMEOUT_MINUTES: "",
+  COOLDOWN_MINUTES: "",
   NEXT_DIST_DIR: ".next-test",
   NEXT_TELEMETRY_DISABLED: "1",
   NODE_ENV: undefined,
@@ -55,6 +60,7 @@ env[pathKey] = `${path.join(web, "node_modules", ".bin")}${path.delimiter}${env[
 
 const results = [];
 let server = null;
+let logFd = null;
 const tail = (text, n) => text.trim().split("\n").slice(-n).join("\n");
 const summary = (text) => text.split("\n").filter((l) => /^# (tests|pass|fail) |^All .*passed|check\(s\) (failed|FAILED)|^Errors:/.test(l)).slice(-4).join(" | ");
 
@@ -70,6 +76,7 @@ function run(name, nodeArgs, opts = {}) {
   const secs = ((Date.now() - t0) / 1000).toFixed(1);
   results.push({ name, ok, secs, note: ok ? summary(out) : "" });
   console.log(`${ok ? "ok" : "FAILED"} (${secs}s)`);
+  if (ok && opts.show) console.log(out.trim().split("\n").map((l) => `    ${l}`).join("\n")); // reports worth reading
   if (!ok) {
     // Show every failed check, not only what happens to be in the last lines of a long output.
     const failedLines = out.split("\n").filter((l) => /^(FAIL|not ok)\b/.test(l));
@@ -87,21 +94,23 @@ const freePort = () => new Promise((resolve, reject) => {
 
 async function startServer(port) {
   const useDev = flag("dev");
-  server = spawn(process.execPath, [NEXT, useDev ? "dev" : "start", "-p", String(port), "-H", "127.0.0.1"], { cwd: web, env, stdio: ["ignore", "pipe", "pipe"] });
-  let log = "";
-  server.stdout.on("data", (d) => (log += d));
-  server.stderr.on("data", (d) => (log += d));
+  // The server writes to a file, not a pipe. The stages above run with spawnSync, which blocks this process, so
+  // a pipe would fill up (64 KB) during a long stage and freeze the server in the middle of a console.log.
+  const logFile = path.join(tmp, "server.log");
+  logFd = openSync(logFile, "a");
+  server = spawn(process.execPath, [NEXT, useDev ? "dev" : "start", "-p", String(port), "-H", "127.0.0.1"], { cwd: web, env, stdio: ["ignore", logFd, logFd] });
   for (let i = 0; i < 120; i++) {
     try { if ((await fetch(`http://127.0.0.1:${port}/login`)).status === 200) return; } catch { /* not up yet */ }
     if (server.exitCode !== null) break;
     await new Promise((r) => setTimeout(r, 1000));
   }
-  console.log(tail(log, 30));
+  console.log(tail(readFileSync(logFile, "utf8"), 30));
   throw new Error("The server did not start");
 }
 
 function cleanup() {
   if (server && server.exitCode === null) server.kill();
+  if (logFd !== null) { try { closeSync(logFd); } catch { /* already closed */ } }
   if (readFileSync(tsconfigFile, "utf8") !== tsconfigBefore) writeFileSync(tsconfigFile, tsconfigBefore);
   if (flag("keep")) console.log(`Kept ${tmp}`);
   else rmSync(tmp, { recursive: true, force: true });
@@ -135,7 +144,7 @@ process.on("SIGINT", () => { cleanup(); process.exit(130); });
         step("access", [path.join("scripts", "test-access.mjs"), url]);
         step("generator", [path.join(repo, "tools", "mock-generator", "generate.mjs"), "all", "--url", url, "--key", INTAKE_API_KEY], { cwd: repo });
         for (const [name, script] of [["replay", "replay-scenarios.mjs"], ["latency", "measure-latency.mjs"]]) {
-          if (existsSync(path.join(web, "scripts", script))) step(name, [path.join("scripts", script), url]);
+          if (existsSync(path.join(web, "scripts", script))) step(name, [path.join("scripts", script), url], { show: true });
         }
       }
     }

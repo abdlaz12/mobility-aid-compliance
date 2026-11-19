@@ -50,11 +50,17 @@ npm run test:integration    # escalation, notification queue and cooldown, on a 
 npm run test:access         # who may see and change what, per role; needs a running server and a seeded database
 node ../tools/mock-generator/generate.mjs all    # sends sample detections (see tools/mock-generator)
 ```
+`test:all` also replays 27 scripted scenarios (`scripts/replay-scenarios.mjs`, data in `scripts/scenarios/scripted.json`) and measures latency with 10 patients at once over 1,100 notifications (`scripts/measure-latency.mjs`); both print their report. Replay reports false-positive and false-negative Warning rates and warnings per episode (proposal 6.2). It can also replay recorded model output: `node scripts/replay-scenarios.mjs <url> --events recorded.jsonl`. The latency script needs `LATENCY_PATIENTS` and `LATENCY_ROUNDS` only if you want other sizes.
+
 `test:all` is the one to run before a commit. It generates the Prisma client, type-checks, lints, runs the unit and integration tests, migrates and seeds a temporary database, builds the app into `.next-test` (so a running dev server is not disturbed), starts it on a free port and runs the access tests and the mock generator against it, then cleans up. Options: `-- --dev` (use `next dev` instead of a build), `-- --only=unit,access` (run some stages), `-- --keep` (keep the temporary folder). It needs no setup beyond `npm install` and works on Linux, macOS and Windows.
 
 The same command runs in GitHub Actions on every push to `main` and on pull requests (`.github/workflows/ci.yml`).
 
 `test:access` signs in as each demo user and checks the role and patient-scope rules, including two nurses acknowledging the same alert at once, admin management of patients and users, the login lock-out and hardening of the intake endpoint. Run directly against your development server it leaves a few throwaway accounts and patients behind (`npx prisma migrate reset` cleans up); `test:all` never does.
+
+## What the measurements do and do not show
+- **Replay (false-positive and false-negative rates):** the scenarios are written from the rules in the proposal, so 0% means the system does exactly what is specified, including the boundaries (a confidence exactly at the threshold counts as confident). It says nothing about how accurate the models are. Real error rates need recorded model output with known ground truth.
+- **Latency (NFR1.1, NFR1.2):** received time to sent time, on one machine, with the `log` channel standing in for Pushover and SQLite as the database. It excludes model inference (as the requirement does) and the real Pushover network call, so repeat it with Pushover and PostgreSQL on the deployment server before quoting it.
 
 ## Background jobs
 A loop started in `src/instrumentation.ts` runs every 15 s: it escalates overdue warnings, then delivers queued notifications. It assumes one long-running server process (the lab server). On serverless hosting set `BACKGROUND_JOBS=off` and call `POST /api/jobs/run` (header `Authorization: Bearer <INTAKE_API_KEY>`) from a cron instead. To watch it work, start the server with a short deadline: `ACK_TIMEOUT_MINUTES=0.05 npm run dev`, send `node ../tools/mock-generator/generate.mjs noncompliant`, and read the `[notify:log]` lines in the server terminal.

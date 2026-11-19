@@ -14,7 +14,7 @@ export const backoffMs = (attempts: number) => Math.min(30_000 * 2 ** Math.max(0
 export const recipientTypes = (level: string, routing: Routing): string[] =>
   level === "warning" || level === "escalated" || level === "emergency" ? routing[level] : [];
 
-export async function enqueueForAlert(alertId: number, level: string): Promise<number> {
+export async function enqueueForAlert(alertId: number, level: string, trigger: "intake" | "escalation" = "intake"): Promise<number> {
   const types = recipientTypes(level, (await getSettings()).routing);
   const alert = await prisma.alert.findUnique({ where: { id: alertId }, select: { patientId: true } });
   if (!types.length || !alert) return 0;
@@ -23,7 +23,7 @@ export async function enqueueForAlert(alertId: number, level: string): Promise<n
     include: { user: { select: { id: true, pushoverUserKey: true } } },
   });
   for (const c of contacts) {
-    await prisma.notification.create({ data: { alertId, userId: c.user.id, channel: channelNameFor(c.user) } });
+    await prisma.notification.create({ data: { alertId, userId: c.user.id, channel: channelNameFor(c.user), trigger } });
   }
   return contacts.length;
 }
@@ -51,7 +51,8 @@ export async function deliverQueued(opts: { now?: Date; channels?: Record<string
       data: { attempts: n.attempts + 1, lastAttemptAt: now },
     });
     if (claim.count === 0) continue;
-    const finish = (status: string) => prisma.notification.update({ where: { id: n.id }, data: { status } });
+    const finish = (status: string) =>
+      prisma.notification.update({ where: { id: n.id }, data: { status, ...(status === "sent" ? { sentAt: new Date() } : {}) } });
 
     if (n.alert.status !== "pending") { await finish("skipped"); report.skipped++; continue; } // someone already acknowledged it
     const channel = channels[n.channel];

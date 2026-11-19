@@ -374,6 +374,16 @@ try {
   } finally {
     check("reset all settings (always, so other tests are unaffected)", await status(admin, "/api/settings", "DELETE"), 200);
   }
+  console.log("# latency metrics (admin only)");
+  check("anonymous cannot read the metrics", await status(anon, "/api/metrics/latency"), 401);
+  check("nurse cannot read the metrics", await status(nurse, "/api/metrics/latency"), 403);
+  const lat = await (await admin("/api/metrics/latency")).json();
+  check("admin gets counts and the 5 s target", [typeof lat.count, lat.targetMs, typeof lat.generatedAt], ["number", 5000, "string"]);
+  check("the notifications so far were sent well within the target", lat.count > 0 && lat.p95Ms < 5000, true);
+  check("a bad 'since' is refused", await status(admin, "/api/metrics/latency?since=yesterday"), 400);
+  check("a bad 'limit' is refused", await status(admin, "/api/metrics/latency?limit=-5"), 400);
+  check("a future 'since' gives an empty summary", (await (await admin(`/api/metrics/latency?since=${encodeURIComponent(new Date(Date.now() + 3600_000).toISOString())}`)).json()).count, 0);
+
   console.log("# intake input hardening");
   const raw = (text, extra = {}) => fetch(`${BASE}/api/detections`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}`, ...extra }, body: text }).then((r) => r.status);
   const post = (o) => raw(JSON.stringify({ ...goodEvent(), ...o }));

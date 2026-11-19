@@ -1,0 +1,31 @@
+{
+  "about": "Scripted scenarios from proposal section 6.2. Patients come from the seed: P-0042 is prescribed a walker, P-0043 a cane. 'reset' first sends a compliant sighting, which ends any earlier episode (FR3.3). 'expect.alert' is what the system must answer: warning, info, emergency or null (no alert). 'expect.review' is whether the detection is flagged for manual review. A step may set aidConfidence, identityConfidence, type, timestamp, and repeat.",
+  "groups": [
+    { "name": "compliant: walker patient with the walker", "steps": [{ "patient": "P-0042", "aid": "walker", "expect": { "alert": "info" } }] },
+    { "name": "compliant: cane patient with the cane", "steps": [{ "patient": "P-0043", "aid": "cane", "expect": { "alert": "info" } }] },
+    { "name": "non-compliant: no aid", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "none", "expect": { "alert": "warning" } }] },
+    { "name": "non-compliant: cane instead of the walker", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "cane", "expect": { "alert": "warning" } }] },
+    { "name": "non-compliant: wheelchair instead of the walker", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "wheelchair", "expect": { "alert": "warning" } }] },
+    { "name": "non-compliant: crutches instead of the walker", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "crutches", "expect": { "alert": "warning" } }] },
+    { "name": "non-compliant: walker instead of the cane", "steps": [{ "patient": "P-0043", "reset": true }, { "patient": "P-0043", "aid": "walker", "expect": { "alert": "warning" } }] },
+    { "name": "non-compliant: no aid for the cane patient", "steps": [{ "patient": "P-0043", "reset": true }, { "patient": "P-0043", "aid": "none", "expect": { "alert": "warning" } }] },
+    { "name": "recorded replay with an old timestamp", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "none", "timestamp": "2026-01-02T03:04:05Z", "expect": { "alert": "warning" } }] },
+    { "name": "alarm fatigue: 20 detections in one continuous episode raise one warning", "episode": true,
+      "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "none", "expect": { "alert": "warning" } }, { "patient": "P-0042", "aid": "none", "repeat": 19, "expect": { "alert": null } }] },
+    { "name": "alarm fatigue: a different wrong aid in the same episode is still the same episode", "episode": true,
+      "steps": [{ "patient": "P-0043", "reset": true }, { "patient": "P-0043", "aid": "none", "expect": { "alert": "warning" } }, { "patient": "P-0043", "aid": "walker", "expect": { "alert": null } }, { "patient": "P-0043", "aid": "wheelchair", "expect": { "alert": null } }] },
+    { "name": "a compliant sighting ends the episode, the next non-compliance warns again",
+      "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "none", "expect": { "alert": "warning" } }, { "patient": "P-0042", "aid": "walker", "expect": { "alert": "info" } }, { "patient": "P-0042", "aid": "none", "expect": { "alert": "warning" } }] },
+    { "name": "visitor: unknown person without an aid is ignored", "steps": [{ "patient": null, "aid": "none", "identityConfidence": 0.3, "expect": { "alert": null } }] },
+    { "name": "visitor: unknown person in a wheelchair is ignored", "steps": [{ "patient": null, "aid": "wheelchair", "identityConfidence": 0.4, "expect": { "alert": null } }] },
+    { "name": "visitor: even a confident 'no match' is ignored", "steps": [{ "patient": null, "aid": "none", "identityConfidence": 0.99, "expect": { "alert": null } }] },
+    { "name": "low aid confidence goes to review, no alert", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "none", "aidConfidence": 0.3, "expect": { "alert": null, "review": true } }] },
+    { "name": "low identity confidence goes to review, no alert", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "none", "identityConfidence": 0.3, "expect": { "alert": null, "review": true } }] },
+    { "name": "both confidences low goes to review", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "none", "identityConfidence": 0.2, "aidConfidence": 0.2, "expect": { "alert": null, "review": true } }] },
+    { "name": "a patient code the system does not know goes to review", "steps": [{ "patient": "P-9999", "aid": "none", "expect": { "alert": null, "review": true } }] },
+    { "name": "an aid label the system does not know goes to review", "steps": [{ "patient": "P-0042", "reset": true }, { "patient": "P-0042", "aid": "hoverboard", "expect": { "alert": null, "review": true } }] },
+    { "name": "a fall indication is an emergency", "steps": [{ "patient": "P-0042", "aid": "none", "type": "fall_indication", "expect": { "alert": "emergency" } }] },
+    { "name": "an emergency is never suppressed by the cooldown", "steps": [{ "patient": "P-0042", "aid": "none", "type": "fall_indication", "expect": { "alert": "emergency" } }, { "patient": "P-0042", "aid": "none", "type": "fall_indication", "expect": { "alert": "emergency" } }] },
+    { "name": "a fall indication from an unknown person raises no alert", "steps": [{ "patient": null, "aid": "none", "identityConfidence": 0.2, "type": "fall_indication", "expect": { "alert": null } }] }
+  ]
+}

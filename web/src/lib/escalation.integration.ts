@@ -266,3 +266,65 @@ test("settings: a corrupt stored value is ignored and the default applies", asyn
   const alert = await m.prisma.alert.findFirstOrThrow({ where: { detectionId: r.detectionId } });
   assert.deepEqual(emailsOf(await notes(alert.id)), ["nurse@example.test"], "default routing: nurse only on a warning");
 });
+
+
+// ---- Closing acknowledged alerts when the patient is seen with the aid again ---------------------------
+const alertOf = async (detectionId: number) => m.prisma.alert.findFirstOrThrow({ where: { detectionId } });
+const warningFor = async (patient: string, status?: string) => {
+  const r = await m.processDetection(ev(patient, "none"));
+  const a = await alertOf(r.detectionId);
+  if (status) await m.prisma.alert.update({ where: { id: a.id }, data: { status } });
+  return a.id;
+};
+const get = (id: number) => m.prisma.alert.findUniqueOrThrow({ where: { id } });
+
+test("closing: an acknowledged warning closes, with the time, when the patient is seen with the walker", async () => {
+  const id = await warningFor("P-0042", "acknowledged");
+  assert.equal((await m.processDetection(ev("P-0042", "walker"))).alertLevel, "info");
+  const a = await get(id);
+  assert.deepEqual([a.status, a.closedAt !== null], ["closed", true]);
+});
+
+test("closing: an acknowledged escalated alert closes too", async () => {
+  const id = await warningFor("P-0042");
+  await m.prisma.alert.update({ where: { id }, data: { level: "escalated", status: "acknowledged" } });
+  await m.processDetection(ev("P-0042", "walker"));
+  assert.equal((await get(id)).status, "closed");
+});
+
+test("closing: an alert nobody acknowledged stays pending (acknowledgement is mandatory)", async () => {
+  const id = await warningFor("P-0042");
+  await m.processDetection(ev("P-0042", "walker"));
+  const a = await get(id);
+  assert.deepEqual([a.status, a.closedAt], ["pending", null]);
+});
+
+test("closing: an emergency is not closed by a compliant sighting", async () => {
+  const r = await m.processDetection(ev("P-0042", "none", "fall_indication"));
+  const a = await alertOf(r.detectionId);
+  await m.prisma.alert.update({ where: { id: a.id }, data: { status: "acknowledged" } });
+  await m.processDetection(ev("P-0042", "walker"));
+  assert.equal((await get(a.id)).status, "acknowledged");
+});
+
+test("closing: only that patient's alerts close", async () => {
+  const mine = await warningFor("P-0042", "acknowledged");
+  const other = await warningFor("P-0043", "acknowledged");
+  await m.processDetection(ev("P-0042", "walker"));
+  assert.deepEqual([(await get(mine)).status, (await get(other)).status], ["closed", "acknowledged"]);
+});
+
+test("closing: a wrong aid or a low-confidence sighting does not close anything", async () => {
+  const id = await warningFor("P-0042", "acknowledged");
+  await m.processDetection(ev("P-0042", "cane")); // compliant would be walker
+  const weak = { ...ev("P-0042", "walker"), aid: { label: "walker", confidence: 0.2 } };
+  assert.equal((await m.processDetection(weak)).needsReview, true);
+  assert.equal((await get(id)).status, "acknowledged");
+});
+
+test("closing: after it closed, the next non-compliance is a new episode with a new warning", () => withCooldown("10", async () => {
+  assert.equal(await level("P-0042", "none"), "warning");
+  await m.prisma.alert.updateMany({ data: { status: "acknowledged" } });
+  assert.equal(await level("P-0042", "walker"), "info");
+  assert.equal(await level("P-0042", "none"), "warning");
+}));

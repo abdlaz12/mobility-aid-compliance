@@ -110,6 +110,7 @@ try {
   check("nurse can for P-0042", await ack(nurse, a42), 200);
   check("missing alert", await ack(nurse, 99999999), 404);
   await send("P-0042", "walker");
+  check("an acknowledged alert closes when the patient is seen with the aid again", (await (await admin(`/api/alerts/${a42}`)).json()).status, "closed");
   check("a new episode is accepted", await send("P-0042", "none"), 201);
   const race = (await (await admin("/api/alerts?status=pending&level=warning")).json()).alerts.filter((a) => a.patient.code === "P-0042")[0].id;
   const results = (await Promise.all([ack(nurse, race), ack(admin, race)])).sort();

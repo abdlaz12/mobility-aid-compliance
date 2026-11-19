@@ -155,6 +155,7 @@ model Alert {
   reminderTriggered Boolean   @default(false) // stretch: audio reminder already played
   acknowledgedById  Int?
   acknowledgedAt    DateTime?
+  closedAt          DateTime? // set when an acknowledged alert is closed because the patient was seen with the prescribed aid again
 
   patient        Patient        @relation(fields: [patientId], references: [id])
   detection      Detection      @relation(fields: [detectionId], references: [id])

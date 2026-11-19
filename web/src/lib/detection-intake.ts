@@ -114,6 +114,14 @@ export async function processDetection(e: DetectionEvent): Promise<IntakeResult>
         status: decision.alertLevel === "info" ? "closed" : "pending",
       },
     });
+    // Proposal scenario A, step 5: an alert a nurse already acknowledged is closed when the patient is seen with
+    // the prescribed aid again. Alerts nobody acknowledged yet stay open, and a fall (emergency) is not closed by this.
+    if (decision.alertLevel === "info") {
+      await prisma.alert.updateMany({
+        where: { patientId: patient.id, status: "acknowledged", level: { in: ["warning", "escalated"] } },
+        data: { status: "closed", closedAt: new Date() },
+      });
+    }
     // Queue the notifications. A failure here must not turn an accepted event into an error:
     // the alert is stored and shows on the dashboard.
     try {

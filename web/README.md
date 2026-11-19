@@ -52,7 +52,7 @@ Useful: `npx prisma studio` opens a browser view of the database.
 - **Prisma is pinned to 6.x** (`prisma` and `@prisma/client`), which is stable and simple with SQLite. Moving to PostgreSQL later means changing the provider in `schema.prisma` and `DATABASE_URL`.
 - The generated Prisma client (`src/generated/`) and the local database (`*.db`) are git-ignored, so run `npx prisma migrate dev` after cloning.
 - Fixed vocabularies (role, level, status) are plain strings in the schema and are validated in code, to keep SQLite and PostgreSQL both working.
-- `npm audit` reports high-severity warnings in the lint tooling chain (`eslint-config-next`). They are in development tools only. Do not run `npm audit fix --force`: it would downgrade the toolchain.
+- Dependencies were checked with `npm audit --omit=dev` on 2026-11-19. Next.js is on 16.4.6 (16.2.0 to 16.4.4 had two moderate advisories about cache leaks in `use cache`). One high advisory remains, `deepmerge-ts` inside the Prisma CLI (stack exhaustion when merging recursive objects). It is only reachable through the CLI during development, never at runtime, and the fix needs Prisma 7, a breaking change that is deferred (see `docs/decisions.md`: Prisma is pinned to 6.x). Do not run `npm audit fix --force`.
 - Run `npm` and `node` from Windows only, not from WSL, so `node_modules` stays one platform.
 
 ## Background jobs

@@ -38,6 +38,7 @@ Short record of decisions and the reason for each. Date format YYYY-MM-DD.
 | 2026-11-16 | **Deactivation is the way to end access**; a password reset does not end an open session | Sessions are JWTs. The user is re-read from the database on every request, so deactivation is immediate. A token version would be needed to cut sessions on password reset. |
 | 2026-11-16 | **Login lock-out in memory**: 5 wrong passwords per account and 30 per IP in 15 minutes; unknown emails count too | Fits the single server process. No extra table or dependency. Counting unknown emails keeps the lock from revealing which accounts exist. |
 | 2026-11-16 | **Pushover keys are entered by each user** on their Account page, never shown again | Keeps the key out of the admin's hands and out of every response. |
+| 2026-11-19 | **Next.js 16.4.6** (patch upgrade); **Prisma stays on 6.x** and its `deepmerge-ts` advisory is accepted for now | The Next advisories were in `use cache`, which the app does not use, but a patch bump costs nothing and makes `next build` exit cleanly. The Prisma advisory is reachable only through the CLI during development and needs a breaking major upgrade; revisit when moving to PostgreSQL. |
 
 ## Open decisions
 - **Real-time channel:** Socket.io on a separate small Node process, or Server-Sent Events. Next.js API routes usually cannot hold long-lived WebSocket connections.

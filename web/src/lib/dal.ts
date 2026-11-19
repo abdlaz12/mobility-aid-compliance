@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import type { NewPatient, PatientUpdate } from "@/lib/patient-input";
+import * as reid from "@/lib/reid";
 
 export const ROLES = ["admin", "nurse", "family"] as const;
 export type Role = (typeof ROLES)[number];
@@ -196,6 +197,8 @@ export async function getPatientDetail(user: SessionUser, id: number) {
   if (user.role !== "admin") return base;
   return {
     ...base,
+    consent: p.consentBy ? { by: p.consentBy, at: p.consentAt } : null,
+    reid: await reid.gallerySummary(p.id), // counts only; the references are under /api/patients/{id}/reid
     prescriptions: p.prescriptions.map((x) => ({ aid: x.mobilityAid.name, validFrom: x.validFrom, validTo: x.validTo })),
     contacts: p.contacts.map((c) => ({ type: c.type, ...c.user })),
   };
@@ -235,6 +238,7 @@ export async function createPatient(user: SessionUser, input: NewPatient) {
         code: input.code, name: input.name, initials: input.initials, age: input.age,
         zone: input.room ? roomLink(input.room) : undefined,
         prescriptions: { create: { mobilityAidId } },
+        ...(input.consent ? { consentBy: input.consent, consentAt: new Date() } : {}),
       },
     });
     return { id: p.id, code: p.code };
@@ -248,6 +252,9 @@ export async function createPatient(user: SessionUser, input: NewPatient) {
 export async function updatePatient(user: SessionUser, id: number, input: PatientUpdate) {
   assertRole(user, ADMIN);
   const current = await ensurePatient(id);
+  // Consent first (it can be refused), so nothing else changes if it is.
+  if (input.consent === "withdrawn") failOn(await reid.withdrawConsent(id));
+  else if (input.consent) failOn(await reid.recordConsent(id, input.consent));
   const data: Prisma.PatientUpdateInput = {};
   if (input.name !== undefined) data.name = input.name;
   if (input.initials !== undefined) data.initials = input.initials;
@@ -258,6 +265,37 @@ export async function updatePatient(user: SessionUser, id: number, input: Patien
     data.dischargedAt = input.status === "discharged" ? new Date() : null;
   }
   await prisma.patient.update({ where: { id }, data });
+  // Proposal section 7: embeddings are deleted when a patient is discharged. History and alerts stay.
+  if (input.status === "discharged" && current.status !== "discharged") await reid.deleteSamples(id);
+}
+
+/** Turns a failure from reid.ts into the HttpError the API reports. */
+function failOn<T extends { ok: boolean }>(r: T): asserts r is Extract<T, { ok: true }> {
+  if (!r.ok) {
+    const f = r as unknown as reid.Failure;
+    throw new HttpError(f.status, f.error);
+  }
+}
+
+// ---- ReID gallery (admin only) -----------------------------------------------------------------------------
+export async function listReidSamples(user: SessionUser, patientId: number) {
+  assertRole(user, ADMIN);
+  await ensurePatient(patientId);
+  return { samples: await reid.listSamples(patientId), ...(await reid.gallerySummary(patientId)) };
+}
+
+export async function enrolReidSample(user: SessionUser, patientId: number, input: reid.SampleInput) {
+  assertRole(user, ADMIN);
+  const r = await reid.enrolSample(patientId, input);
+  failOn(r);
+  return { id: r.id };
+}
+
+export async function removeReidSamples(user: SessionUser, patientId: number, sampleId?: number) {
+  assertRole(user, ADMIN);
+  const r = await reid.deleteSamples(patientId, sampleId);
+  failOn(r);
+  return { deleted: r.deleted };
 }
 
 /** FR1.2: set a new prescribed aid. The previous prescription is closed, not deleted. */

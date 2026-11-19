@@ -32,7 +32,7 @@ function parseRoom(v: unknown): Result<string | null> {
   return ROOM.test(s) ? ok(s) : fail("Room may use letters, digits and dashes only, up to 20 characters (for example R-204).");
 }
 
-export type NewPatient = { code: string; name: string; initials: string; age: number | null; room: string | null; aid: string };
+export type NewPatient = { code: string; name: string; initials: string; age: number | null; room: string | null; aid: string; consent?: "patient" | "substitute" };
 
 export function parseNewPatient(raw: Record<string, unknown>): Result<NewPatient> {
   const code = str(raw.code);
@@ -43,10 +43,20 @@ export function parseNewPatient(raw: Record<string, unknown>): Result<NewPatient
   const room = parseRoom(raw.room); if (!room.ok) return room;
   const aid = str(raw.aid);
   if (!aid) return fail("Choose the prescribed mobility aid.");
-  return ok({ code, name: name.value, initials: initials.value, age: age.value, room: room.value, aid });
+  const consent = raw.consent === undefined || raw.consent === "" ? ok(undefined) : parseConsent(raw.consent, false);
+  if (!consent.ok) return consent;
+  return ok({ code, name: name.value, initials: initials.value, age: age.value, room: room.value, aid, ...(consent.value ? { consent: consent.value } : {}) });
 }
 
-export type PatientUpdate = { name?: string; initials?: string; age?: number | null; room?: string | null; status?: "active" | "discharged" };
+/** Who consented to monitoring and identification (proposal section 7). "withdrawn" is only valid when changing a patient. */
+export function parseConsent(v: unknown, allowWithdrawn: true): Result<"patient" | "substitute" | "withdrawn">;
+export function parseConsent(v: unknown, allowWithdrawn: false): Result<"patient" | "substitute">;
+export function parseConsent(v: unknown, allowWithdrawn: boolean): Result<"patient" | "substitute" | "withdrawn"> {
+  if (v === "patient" || v === "substitute" || (allowWithdrawn && v === "withdrawn")) return ok(v);
+  return fail(allowWithdrawn ? 'consent must be "patient", "substitute" or "withdrawn".' : 'consent must be "patient" or "substitute".');
+}
+
+export type PatientUpdate = { name?: string; initials?: string; age?: number | null; room?: string | null; status?: "active" | "discharged"; consent?: "patient" | "substitute" | "withdrawn" };
 
 /** Only the keys present in `raw` are changed. */
 export function parsePatientUpdate(raw: Record<string, unknown>): Result<PatientUpdate> {
@@ -62,7 +72,19 @@ export function parsePatientUpdate(raw: Record<string, unknown>): Result<Patient
     if (raw.status !== "active" && raw.status !== "discharged") return fail("Status must be active or discharged.");
     out.status = raw.status;
   }
+  if ("consent" in raw) { const r = parseConsent(raw.consent, true); if (!r.ok) return r; out.consent = r.value; }
   return Object.keys(out).length ? ok(out) : fail("Nothing to update.");
+}
+
+/** A calibration sample to link to a patient: where it is stored (a reference, never the data), the aid state, assisted or not. */
+export function parseReidSample(raw: Record<string, unknown>): Result<{ embeddingRef: string; aid: string; isAssisted: boolean }> {
+  const embeddingRef = str(raw.embeddingRef);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(embeddingRef) || embeddingRef.includes("..")) return fail("embeddingRef must be 1 to 200 characters: letters, digits and . _ : / -");
+  const aid = str(raw.aid);
+  if (!aid) return fail("Choose the aid state of the sample.");
+  const a = raw.isAssisted;
+  if (a !== undefined && a !== true && a !== false && a !== "true" && a !== "false" && a !== "") return fail("isAssisted must be true or false.");
+  return ok({ embeddingRef, aid, isAssisted: a === true || a === "true" });
 }
 
 export function parsePrescription(raw: Record<string, unknown>): Result<{ aid: string }> {

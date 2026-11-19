@@ -61,6 +61,8 @@ model Patient {
   zoneId       Int? // main room (administrative data)
   status       String    @default("active") // active / discharged
   dischargedAt DateTime?
+  consentBy    String? // patient / substitute: who consented to monitoring and identification (proposal section 7)
+  consentAt    DateTime?
   createdAt    DateTime  @default(now())
 
   zone           Zone?            @relation(fields: [zoneId], references: [id])

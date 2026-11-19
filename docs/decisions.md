@@ -42,6 +42,9 @@ Short record of decisions and the reason for each. Date format YYYY-MM-DD.
 | 2026-11-19 | **Settings live in the database; precedence is database, then environment, then default** | NFR5.2 asks for thresholds, timeouts and routing that change without redeploying. Keeping the environment as a fallback means existing `.env` files and the short timeouts used for demos keep working. A stored value that is invalid is ignored rather than trusted. |
 | 2026-11-19 | **Routing can never be empty for Warning, Escalated or Emergency**; Info stays a silent log | An admin must not be able to switch off emergency notifications by accident. |
 | 2026-11-19 | **Defaults aligned with proposal v3 only where it states them**: cooldown 10 minutes (6.2) and identity threshold 0.80 (4.4). Aid threshold (0.6) and acknowledgement timeout (10 minutes, the proposal's 5 is an example) stay | Avoid changing clinical behaviour without a statement behind it; all of them are editable. |
+| 2026-11-19 | **The backend stores references to ReID samples, not embeddings or point clouds**; the model service produces and holds the data | Matches the architecture in proposal 3.5 (inference on a separate service) and keeps biometric data out of the web database. |
+| 2026-11-19 | **Embeddings are deleted on discharge and when consent is withdrawn; the consent record and the history stay** | Proposal section 7. Reactivating a patient needs new samples. Consent is optional at registration but required to enrol; the registration form should ask for it. |
+| 2026-11-19 | **The model service reads the gallery through `GET /api/reid/gallery` with the shared API key** | One small, auditable path for biometric references, closed to sessions. |
 
 ## Open decisions
 - **Real-time channel:** Socket.io on a separate small Node process, or Server-Sent Events. Next.js API routes usually cannot hold long-lived WebSocket connections.

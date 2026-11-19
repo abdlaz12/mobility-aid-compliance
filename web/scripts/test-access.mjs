@@ -116,6 +116,7 @@ try {
   const results = (await Promise.all([ack(nurse, race), ack(admin, race)])).sort();
   check("simultaneous acknowledge: exactly one wins", results, [200, 409]);
 
+  const stamp = Date.now().toString(36);
   console.log("# managing patients (admin only)");
   const body = (o) => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(o) });
   const call = (g, path, method, o) => g(path, { method, ...body(o) });
@@ -186,6 +187,76 @@ try {
   const back = await sendFull(code, "none");
   check("reactivated patient raises alerts again", [back.status, back.alert], [201, "warning"]);
 
+
+  console.log("# consent and ReID enrolment (admin only, biometric references)");
+  const reidPath = `/api/patients/${pid}/reid`;
+  const sampleBody = (n, o = {}) => ({ embeddingRef: `reid/${code}/sample-${n}`, aid: "walker", isAssisted: false, ...o });
+  const keyed = (path, key = KEY) => fetch(`${BASE}${path}`, key ? { headers: { Authorization: `Bearer ${key}` } } : {}).then(async (r) => ({ status: r.status, body: await r.json() }));
+  check("anonymous cannot list samples", await status(anon, reidPath), 401);
+  check("nurse cannot list samples", await status(nurse2, reidPath), 403);
+  check("family cannot list samples", await status(family2, reidPath), 403);
+  check("nurse cannot enrol", (await call(nurse2, reidPath, "POST", sampleBody(1))).status, 403);
+  check("nurse cannot delete", await status(nurse2, reidPath, "DELETE"), 403);
+  check("enrolling without consent on file is refused (409)", (await call(admin, reidPath, "POST", sampleBody(1))).status, 409);
+  check("an unknown consent value is refused", (await call(admin, `/api/patients/${pid}`, "PATCH", { consent: "bogus" })).status, 400);
+  check("nurse cannot record consent", (await call(nurse2, `/api/patients/${pid}`, "PATCH", { consent: "patient" })).status, 403);
+  check("admin records consent from the substitute decision-maker", (await call(admin, `/api/patients/${pid}`, "PATCH", { consent: "substitute" })).status, 200);
+  const withConsent = await (await admin(`/api/patients/${pid}`)).json();
+  check("the patient page shows who consented", withConsent.consent.by, "substitute");
+  for (const [name, o] of [["a path-like reference", { embeddingRef: "../../etc/passwd" }], ["a reference with spaces", { embeddingRef: "my sample" }], ["a very long reference", { embeddingRef: "x".repeat(300) }],
+    ["an unknown aid state", { aid: "jetpack" }], ["a missing aid state", { aid: "" }], ["assisted as a number", { isAssisted: 3 }]]) {
+    check(`${name} is refused`, (await call(admin, reidPath, "POST", sampleBody(9, o))).status, 400);
+  }
+  const first = await call(admin, reidPath, "POST", sampleBody(1, { aid: "none", isAssisted: true }));
+  check("admin links an assisted sample recorded without the aid", first.status, 201);
+  check("and a normal one", (await call(admin, reidPath, "POST", sampleBody(2))).status, 201);
+  const listed = await (await admin(reidPath)).json();
+  check("the list has both, with aid state and assisted flag", [listed.sampleCount, listed.samples.map((x) => [x.aid, x.isAssisted])], [2, [["none", true], ["walker", false]]]);
+  check("the admin patient page counts them without listing references", [(await (await admin(`/api/patients/${pid}`)).json()).reid.sampleCount, JSON.stringify(await (await admin(`/api/patients/${pid}`)).json()).includes("embeddingRef")], [2, false]);
+  const nurseView = JSON.stringify(await (await nurse2(`/api/patients/${pid}`)).json());
+  check("an assigned nurse sees no consent or ReID data", [nurseView.includes("consent"), nurseView.includes("reid"), nurseView.includes("embeddingRef")], [false, false, false]);
+  const famView = JSON.stringify(await (await family2(`/api/patients/${pid}`)).json());
+  check("a family member sees no consent or ReID data", [famView.includes("consent"), famView.includes("reid"), famView.includes("embeddingRef")], [false, false, false]);
+  const histText = JSON.stringify(await (await admin(`/api/patients/${pid}/history`)).json()) + JSON.stringify(await (await admin("/api/alerts")).json());
+  check("references never appear in history or alerts, even for an admin", histText.includes("embeddingRef") || histText.includes("reid/"), false);
+
+  const gallery = await keyed("/api/reid/gallery");
+  check("the model service gets the gallery with its API key", [gallery.status, gallery.body.samples.filter((x) => x.patient_code === code).length], [200, 2]);
+  check("the gallery needs the API key", (await keyed("/api/reid/gallery", "")).status, 401);
+  check("a wrong key is refused", (await keyed("/api/reid/gallery", "not-the-key")).status, 401);
+  check("a session cookie does not open the gallery", (await admin("/api/reid/gallery")).status, 401);
+
+  const sampleId = listed.samples[0].id;
+  check("delete one sample", (await (await admin(`${reidPath}/${sampleId}`, { method: "DELETE" })).json()).deleted, 1);
+  check("deleting it again is 404", await status(admin, `${reidPath}/${sampleId}`, "DELETE"), 404);
+  check("a non-numeric sample id is 404", await status(admin, `${reidPath}/abc`, "DELETE"), 404);
+  check("nurse cannot delete one sample", await status(nurse2, `${reidPath}/${listed.samples[1].id}`, "DELETE"), 403);
+  check("one sample is left", (await (await admin(reidPath)).json()).sampleCount, 1);
+
+  check("discharge deletes the embeddings (section 7)", (await call(admin, `/api/patients/${pid}`, "PATCH", { status: "discharged" })).status, 200);
+  check("the gallery no longer offers the discharged patient", (await keyed("/api/reid/gallery")).body.samples.some((x) => x.patient_code === code), false);
+  check("a discharged patient cannot be enrolled", (await call(admin, reidPath, "POST", sampleBody(3))).status, 409);
+  check("or given consent", (await call(admin, `/api/patients/${pid}`, "PATCH", { consent: "patient" })).status, 409);
+  check("reactivated, the patient's history and consent remain but the samples are gone", await (async () => {
+    await call(admin, `/api/patients/${pid}`, "PATCH", { status: "active" });
+    const d = await (await admin(`/api/patients/${pid}`)).json();
+    return [d.consent.by, d.reid.sampleCount];
+  })(), ["substitute", 0]);
+
+  check("enrol again", (await call(admin, reidPath, "POST", sampleBody(4))).status, 201);
+  check("withdrawing consent deletes the samples and clears the consent", await (async () => {
+    const r = await call(admin, `/api/patients/${pid}`, "PATCH", { consent: "withdrawn" });
+    const d = await (await admin(`/api/patients/${pid}`)).json();
+    return [r.status, d.consent, d.reid.sampleCount];
+  })(), [200, null, 0]);
+  check("enrolling after withdrawal needs fresh consent", (await call(admin, reidPath, "POST", sampleBody(5))).status, 409);
+  check("a patient can be registered with consent", await (async () => {
+    const r = await call(admin, "/api/patients", "POST", { code: `C-${stamp}`, name: "Consent Test", aid: "cane", consent: "patient" });
+    const id = (await r.json()).patient?.id;
+    return [r.status, (await (await admin(`/api/patients/${id}`)).json()).consent?.by];
+  })(), [201, "patient"]);
+  check("an invalid consent at registration is refused", (await call(admin, "/api/patients", "POST", { code: `D-${stamp}`, name: "X", aid: "cane", consent: "withdrawn" })).status, 400);
+
   console.log("# history of one patient");
   const p42 = (await (await admin("/api/patients")).json()).patients.find((p) => p.code === "P-0042").id;
   const hist = (g, id = p42) => status(g, `/api/patients/${id}/history`);
@@ -203,7 +274,6 @@ try {
   check("nurse sees detections and alerts", [nurseHist.detections.length > 0, nurseHist.alerts.length > 0], [true, true]);
 
   console.log("# managing users (admin only)");
-  const stamp = Date.now().toString(36);
   const email = `t${stamp}@example.test`, pw1 = "correct horse battery", pw2 = "another long passphrase", pw3 = "third long passphrase!";
   const newUser = { name: "Test Nurse", email, role: "nurse", password: pw1 };
   check("anonymous cannot list users", await status(anon, "/api/users"), 401);

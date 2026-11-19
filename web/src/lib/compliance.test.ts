@@ -89,7 +89,7 @@ test("password hashing: right password verifies, wrong one and bad formats do no
 });
 
 
-import { parseContacts, parseNewPatient, parsePatientUpdate, makeInitials } from "./patient-input";
+import { parseConsent, parseContacts, parseNewPatient, parsePatientUpdate, parseReidSample, makeInitials } from "./patient-input";
 test("patient input: valid new patient, derived initials", () => {
   const r = parseNewPatient({ code: "P-0044", name: " Jane Q Doe ", age: "81", room: "R-206", aid: "cane" });
   assert.deepEqual(r, { ok: true, value: { code: "P-0044", name: "Jane Q Doe", initials: "J.Q.D.", age: 81, room: "R-206", aid: "cane" } });
@@ -243,5 +243,27 @@ test("settings update: routing needs all three levels, each with at least one va
   for (const bad of [{ ...good, emergency: [] }, { ...good, warning: ["admin"] }, { ...good, warning: ["nurse", "nurse"] }, { warning: ["nurse"], escalated: ["nurse"] },
     { ...good, info: ["nurse"] }, { ...good, warning: "nurse" }, "nurse", null, []]) {
     assert.equal(parseSettingsUpdate({ routing: bad }).ok, false, JSON.stringify(bad));
+  }
+});
+
+
+test("consent: patient or substitute at registration; withdrawn only when changing a patient", () => {
+  const base = { code: "P-0050", name: "Jane", aid: "cane" };
+  assert.deepEqual(parseNewPatient({ ...base, consent: "substitute" }).ok && (parseNewPatient({ ...base, consent: "substitute" }) as { value: { consent?: string } }).value.consent, "substitute");
+  assert.equal((parseNewPatient(base) as { value: { consent?: string } }).value.consent, undefined, "consent is optional at registration");
+  assert.equal(parseNewPatient({ ...base, consent: "withdrawn" }).ok, false, "cannot register as withdrawn");
+  assert.equal(parseNewPatient({ ...base, consent: "yes" }).ok, false);
+  assert.deepEqual(parsePatientUpdate({ consent: "withdrawn" }), { ok: true, value: { consent: "withdrawn" } });
+  assert.deepEqual(parsePatientUpdate({ consent: "patient" }), { ok: true, value: { consent: "patient" } });
+  assert.equal(parsePatientUpdate({ consent: "maybe" }).ok, false);
+  assert.equal(parseConsent("patient", false).ok, true);
+});
+test("ReID sample: a plain reference, an aid state and an assisted flag", () => {
+  assert.deepEqual(parseReidSample({ embeddingRef: "reid/P-0042/sample-1.npy", aid: "walker", isAssisted: true }), { ok: true, value: { embeddingRef: "reid/P-0042/sample-1.npy", aid: "walker", isAssisted: true } });
+  assert.deepEqual(parseReidSample({ embeddingRef: "s1", aid: "none" }), { ok: true, value: { embeddingRef: "s1", aid: "none", isAssisted: false } }, "assisted defaults to false");
+  assert.equal((parseReidSample({ embeddingRef: "s1", aid: "none", isAssisted: "true" }) as { value: { isAssisted: boolean } }).value.isAssisted, true, "form strings work");
+  for (const bad of [{ embeddingRef: "" }, { embeddingRef: "../secret" }, { embeddingRef: "a/../../b" }, { embeddingRef: "-leading" }, { embeddingRef: "has space" },
+    { embeddingRef: "x".repeat(201) }, { embeddingRef: "<script>" }, { embeddingRef: "ok", aid: "" }, { embeddingRef: "ok", aid: "none", isAssisted: "maybe" }]) {
+    assert.equal(parseReidSample({ aid: "none", ...bad }).ok, false, JSON.stringify(bad));
   }
 });

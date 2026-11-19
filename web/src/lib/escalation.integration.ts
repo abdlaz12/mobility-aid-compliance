@@ -11,6 +11,7 @@ import type { Channel, Delivery } from "./notify/channels";
 import type { Message } from "./notify/message";
 
 type Mods = {
+  reid: typeof import("./reid");
   prisma: typeof import("./prisma").prisma;
   processDetection: typeof import("./detection-intake").processDetection;
   escalateOverdueAlerts: typeof import("./escalation").escalateOverdueAlerts;
@@ -50,10 +51,10 @@ before(async () => {
   copyFileSync(src, path.join(dir, "test.db"));
   process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
   process.env.COOLDOWN_MINUTES = "0"; // the tests below create several warnings for one patient; cooldown has its own tests
-  const [{ prisma }, { processDetection }, { escalateOverdueAlerts }, { deliverQueued }] = await Promise.all([
-    import("./prisma"), import("./detection-intake"), import("./escalation"), import("./notify/queue"),
+  const [{ prisma }, { processDetection }, { escalateOverdueAlerts }, { deliverQueued }, reid] = await Promise.all([
+    import("./prisma"), import("./detection-intake"), import("./escalation"), import("./notify/queue"), import("./reid"),
   ]);
-  m = { prisma, processDetection, escalateOverdueAlerts, deliverQueued };
+  m = { prisma, processDetection, escalateOverdueAlerts, deliverQueued, reid };
 });
 
 // Every test starts from a quiet database: no alerts, nothing queued, patients admitted.
@@ -328,3 +329,79 @@ test("closing: after it closed, the next non-compliance is a new episode with a 
   assert.equal(await level("P-0042", "walker"), "info");
   assert.equal(await level("P-0042", "none"), "warning");
 }));
+
+
+// ---- ReID enrolment and consent (FR1.3, FR1.4, proposal section 7) ---------------------------------------
+let serial = 0;
+async function newPatient(over: { status?: string; consent?: string | null } = {}) {
+  const code = `R-${Date.now().toString(36)}-${++serial}`;
+  return m.prisma.patient.create({
+    data: { code, name: "Test", initials: "T.", status: over.status ?? "active", consentBy: over.consent === undefined ? null : over.consent, consentAt: over.consent ? new Date() : null },
+  });
+}
+const sample = (n = 1, aid = "walker", isAssisted = false) => ({ embeddingRef: `ref/${n}`, aid, isAssisted });
+
+test("reid: enrolment needs consent on file", async () => {
+  const p = await newPatient();
+  const refused = await m.reid.enrolSample(p.id, sample());
+  assert.deepEqual([refused.ok, !refused.ok && refused.status], [false, 409]);
+  assert.deepEqual(await m.reid.recordConsent(p.id, "substitute"), { ok: true });
+  assert.equal((await m.reid.enrolSample(p.id, sample())).ok, true);
+  assert.equal((await m.prisma.patient.findUniqueOrThrow({ where: { id: p.id } })).consentBy, "substitute");
+});
+
+test("reid: a discharged patient can neither consent nor be enrolled", async () => {
+  const p = await newPatient({ status: "discharged", consent: "patient" });
+  const e = await m.reid.enrolSample(p.id, sample());
+  const c = await m.reid.recordConsent(p.id, "patient");
+  assert.deepEqual([e.ok, !e.ok && e.status, c.ok, !c.ok && c.status], [false, 409, false, 409]);
+});
+
+test("reid: unknown patient is 404, unknown aid is 400, the assisted flag and aid state are kept", async () => {
+  const p = await newPatient({ consent: "patient" });
+  const none = await m.reid.enrolSample(99999999, sample());
+  const bad = await m.reid.enrolSample(p.id, sample(1, "jetpack"));
+  assert.deepEqual([!none.ok && none.status, !bad.ok && bad.status], [404, 400]);
+  await m.reid.enrolSample(p.id, sample(1, "none", true));
+  await m.reid.enrolSample(p.id, sample(2, "walker", false));
+  const list = await m.reid.listSamples(p.id);
+  assert.deepEqual(list.map((x) => [x.embeddingRef, x.aid, x.isAssisted]), [["ref/1", "none", true], ["ref/2", "walker", false]]);
+  const summary = await m.reid.gallerySummary(p.id);
+  assert.deepEqual([summary.sampleCount, summary.lastAddedAt !== null], [2, true]);
+});
+
+test("reid: delete one sample (only the patient's own) or all of them", async () => {
+  const a = await newPatient({ consent: "patient" }), b = await newPatient({ consent: "patient" });
+  const s1 = await m.reid.enrolSample(a.id, sample(1)), s2 = await m.reid.enrolSample(a.id, sample(2));
+  const sb = await m.reid.enrolSample(b.id, sample(3));
+  assert.ok(s1.ok && s2.ok && sb.ok);
+  const wrong = await m.reid.deleteSamples(a.id, (sb as { id: number }).id);
+  assert.deepEqual([wrong.ok, !wrong.ok && wrong.status], [false, 404], "another patient's sample cannot be deleted through this patient");
+  assert.deepEqual(await m.reid.deleteSamples(a.id, (s1 as { id: number }).id), { ok: true, deleted: 1 });
+  assert.deepEqual(await m.reid.deleteSamples(a.id), { ok: true, deleted: 1 });
+  assert.equal((await m.reid.listSamples(b.id)).length, 1, "the other patient is untouched");
+  assert.deepEqual(await m.reid.deleteSamples(a.id), { ok: true, deleted: 0 }, "deleting nothing is fine");
+});
+
+test("reid: withdrawing consent deletes every sample and clears the consent", async () => {
+  const p = await newPatient({ consent: "patient" });
+  await m.reid.enrolSample(p.id, sample(1)); await m.reid.enrolSample(p.id, sample(2));
+  assert.deepEqual(await m.reid.withdrawConsent(p.id), { ok: true, deleted: 2 });
+  const after = await m.prisma.patient.findUniqueOrThrow({ where: { id: p.id } });
+  assert.deepEqual([after.consentBy, after.consentAt, (await m.reid.listSamples(p.id)).length], [null, null, 0]);
+  const again = await m.reid.enrolSample(p.id, sample());
+  assert.deepEqual([again.ok, !again.ok && again.status], [false, 409], "enrolling needs fresh consent");
+});
+
+test("reid: the model-service gallery lists only admitted, consenting patients", async () => {
+  const ok = await newPatient({ consent: "patient" }), gone = await newPatient({ consent: "patient" }), none = await newPatient({ consent: "patient" });
+  for (const p of [ok, gone, none]) await m.reid.enrolSample(p.id, sample(p.id, "walker", true));
+  // Belt and braces: even if a sample were left behind, these two must not be offered to the model service.
+  await m.prisma.patient.update({ where: { id: gone.id }, data: { status: "discharged" } });
+  await m.prisma.patient.update({ where: { id: none.id }, data: { consentBy: null } });
+  const codes = (await m.reid.galleryForModelService()).map((g) => g.patient_code);
+  assert.ok(codes.includes(ok.code));
+  assert.ok(!codes.includes(gone.code) && !codes.includes(none.code));
+  const mine = (await m.reid.galleryForModelService()).find((g) => g.patient_code === ok.code)!;
+  assert.deepEqual([mine.embedding_ref, mine.aid, mine.assisted], [`ref/${ok.id}`, "walker", true]);
+});

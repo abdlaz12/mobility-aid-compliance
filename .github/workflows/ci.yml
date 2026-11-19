@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      # Types, lint, unit, integration, production build, server, access tests and the mock generator,
+      # all on a throwaway database. See web/scripts/test-all.mjs.
+      - run: npm run test:all
+      # Fails only on critical advisories. A known high one (deepmerge-ts in the Prisma CLI, development only)
+      # is accepted for now; see docs/decisions.md.
+      - run: npm audit --omit=dev --audit-level=critical

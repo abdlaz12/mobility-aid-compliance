@@ -10,7 +10,9 @@
     "test": "tsx --test src/lib/*.test.ts",
     "sync-contract": "node scripts/sync-contract.mjs",
     "test:access": "node scripts/test-access.mjs",
-    "test:integration": "tsx --test src/lib/escalation.integration.ts"
+    "test:integration": "tsx --test src/lib/escalation.integration.ts",
+    "test:all": "node scripts/test-all.mjs",
+    "test:coverage": "tsx --test --experimental-test-coverage --test-coverage-exclude=\"src/generated/**\" --test-coverage-exclude=\"src/**/*.test.ts\" src/lib/*.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

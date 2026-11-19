@@ -41,8 +41,11 @@ const notes = (alertId: number) => m.prisma.notification.findMany({ where: { ale
 const emailsOf = (list: { user: { email: string } }[]) => list.map((n) => n.user.email).sort();
 
 before(async () => {
-  const src = path.resolve(process.cwd(), "prisma/dev.db");
-  if (!existsSync(src)) throw new Error("prisma/dev.db not found. Run `npx prisma migrate dev` and `npx prisma db seed` first.");
+  // Copy the database named by DATABASE_URL when it is an absolute file path (the test runner passes a freshly
+  // migrated one); otherwise the development database.
+  const fromEnv = process.env.DATABASE_URL?.startsWith("file:") ? process.env.DATABASE_URL.slice("file:".length) : "";
+  const src = path.isAbsolute(fromEnv) ? fromEnv : path.resolve(process.cwd(), "prisma/dev.db");
+  if (!existsSync(src)) throw new Error(`${src} not found. Run \`npx prisma migrate dev\` and \`npx prisma db seed\` first.`);
   const dir = mkdtempSync(path.join(os.tmpdir(), "mac-test-"));
   copyFileSync(src, path.join(dir, "test.db"));
   process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;

@@ -40,20 +40,18 @@ All use the fake password `demo-password-1`. They exist only after `npx prisma d
 
 ## Tests
 ```
-npm test                    # unit tests (compliance rules, validator, passwords)
-npm run test:integration    # escalation and the notification queue, on a temporary copy of the database
-npm run test:access         # who may see and acknowledge what; needs the server running + seeded DB
+npm run test:all            # everything below, from scratch, on a throwaway database (about 20 s)
+npm test                    # unit tests (compliance rules, validation, passwords, notification content, limits)
+npm run test:coverage       # the same, with a coverage table (unit tests only; the data layer is covered below)
+npm run test:integration    # escalation, notification queue and cooldown, on a temporary copy of the database
+npm run test:access         # who may see and change what, per role; needs a running server and a seeded database
 node ../tools/mock-generator/generate.mjs all    # sends sample detections (see tools/mock-generator)
 ```
-`test:access` also creates throwaway accounts and patients (each run leaves a few behind; `npx prisma migrate reset` cleans up). It signs in as each demo user and checks the role and patient-scope rules, including two nurses acknowledging the same alert at once, and the admin patient management (create, prescriptions, caregivers, discharge). It can be run repeatedly, but each run leaves a test patient (`T-...`) behind. To start clean: `npx prisma migrate reset` (drops the database, applies migrations and runs the seed).
-Useful: `npx prisma studio` opens a browser view of the database.
+`test:all` is the one to run before a commit. It generates the Prisma client, type-checks, lints, runs the unit and integration tests, migrates and seeds a temporary database, builds the app into `.next-test` (so a running dev server is not disturbed), starts it on a free port and runs the access tests and the mock generator against it, then cleans up. Options: `-- --dev` (use `next dev` instead of a build), `-- --only=unit,access` (run some stages), `-- --keep` (keep the temporary folder). It needs no setup beyond `npm install` and works on Linux, macOS and Windows.
 
-## Notes
-- **Prisma is pinned to 6.x** (`prisma` and `@prisma/client`), which is stable and simple with SQLite. Moving to PostgreSQL later means changing the provider in `schema.prisma` and `DATABASE_URL`.
-- The generated Prisma client (`src/generated/`) and the local database (`*.db`) are git-ignored, so run `npx prisma migrate dev` after cloning.
-- Fixed vocabularies (role, level, status) are plain strings in the schema and are validated in code, to keep SQLite and PostgreSQL both working.
-- Dependencies were checked with `npm audit --omit=dev` on 2026-11-19. Next.js is on 16.4.6 (16.2.0 to 16.4.4 had two moderate advisories about cache leaks in `use cache`). One high advisory remains, `deepmerge-ts` inside the Prisma CLI (stack exhaustion when merging recursive objects). It is only reachable through the CLI during development, never at runtime, and the fix needs Prisma 7, a breaking change that is deferred (see `docs/decisions.md`: Prisma is pinned to 6.x). Do not run `npm audit fix --force`.
-- Run `npm` and `node` from Windows only, not from WSL, so `node_modules` stays one platform.
+The same command runs in GitHub Actions on every push to `main` and on pull requests (`.github/workflows/ci.yml`).
+
+`test:access` signs in as each demo user and checks the role and patient-scope rules, including two nurses acknowledging the same alert at once, admin management of patients and users, the login lock-out and hardening of the intake endpoint. Run directly against your development server it leaves a few throwaway accounts and patients behind (`npx prisma migrate reset` cleans up); `test:all` never does.
 
 ## Background jobs
 A loop started in `src/instrumentation.ts` runs every 15 s: it escalates overdue warnings, then delivers queued notifications. It assumes one long-running server process (the lab server). On serverless hosting set `BACKGROUND_JOBS=off` and call `POST /api/jobs/run` (header `Authorization: Bearer <INTAKE_API_KEY>`) from a cron instead. To watch it work, start the server with a short deadline: `ACK_TIMEOUT_MINUTES=0.05 npm run dev`, send `node ../tools/mock-generator/generate.mjs noncompliant`, and read the `[notify:log]` lines in the server terminal.

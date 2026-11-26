@@ -2,6 +2,12 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, homeFor, useAuth } from "./auth/AuthContext";
 import { AppShell } from "./components/shell/AppShell";
 import type { Role } from "./data/types";
+import { AdminProvider } from "./data/admin";
+import { AddPatient } from "./screens/admin/AddPatient";
+import { PatientDetail } from "./screens/admin/PatientDetail";
+import { AdminPatients } from "./screens/admin/Patients";
+import { AdminSettings } from "./screens/admin/Settings";
+import { AddUser, AdminUsers, UserDetail } from "./screens/admin/Users";
 import { DataProvider } from "./data/store";
 import { FamilyHome } from "./screens/family/Home";
 import { AlertDetail } from "./screens/nurse/AlertDetail";
@@ -32,6 +38,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <DataProvider>
+        <AdminProvider>
         <Routes>
           <Route path="/login" element={<SignIn />} />
           <Route element={<RequireAuth />}>
@@ -43,19 +50,20 @@ export default function App() {
             {/* Family flow */}
             <Route path="home" element={<Only roles={["family"]}><FamilyHome /></Only>} />
             {/* Admin flow */}
-            <Route path="admin/patients" element={<Only roles={["admin"]}><Placeholder title="Patients" flow="Admin flow" /></Only>} />
-            <Route path="admin/patients/new" element={<Only roles={["admin"]}><Placeholder title="Add patient" flow="Admin flow" /></Only>} />
-            <Route path="admin/patients/:id" element={<Only roles={["admin"]}><Placeholder title="Patient detail" flow="Admin flow" /></Only>} />
-            <Route path="admin/users" element={<Only roles={["admin"]}><Placeholder title="Users" flow="Admin flow" /></Only>} />
-            <Route path="admin/users/new" element={<Only roles={["admin"]}><Placeholder title="Add user" flow="Admin flow" /></Only>} />
-            <Route path="admin/users/:id" element={<Only roles={["admin"]}><Placeholder title="User detail" flow="Admin flow" /></Only>} />
-            <Route path="admin/settings" element={<Only roles={["admin"]}><Placeholder title="Settings" flow="Admin flow" /></Only>} />
+            <Route path="admin/patients" element={<Only roles={["admin"]}><AdminPatients /></Only>} />
+            <Route path="admin/patients/new" element={<Only roles={["admin"]}><AddPatient /></Only>} />
+            <Route path="admin/patients/:id" element={<Only roles={["admin"]}><PatientDetail /></Only>} />
+            <Route path="admin/users" element={<Only roles={["admin"]}><AdminUsers /></Only>} />
+            <Route path="admin/users/new" element={<Only roles={["admin"]}><AddUser /></Only>} />
+            <Route path="admin/users/:id" element={<Only roles={["admin"]}><UserDetail /></Only>} />
+            <Route path="admin/settings" element={<Only roles={["admin"]}><AdminSettings /></Only>} />
             {/* Everyone */}
             <Route path="account" element={<Placeholder title="Account" flow="Account" />} />
             <Route path="*" element={<NotFound />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </AdminProvider>
         </DataProvider>
       </AuthProvider>
     </BrowserRouter>

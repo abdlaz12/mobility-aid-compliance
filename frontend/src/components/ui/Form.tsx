@@ -51,7 +51,7 @@ export function Select({ label, hint, error, options, placeholder = "Select an o
   const id = useId();
   return (
     <Wrap id={id} label={label} hint={hint} error={error}>
-      <select id={id} aria-invalid={!!error} className={`${control} ${ring(error)}`} defaultValue="" {...rest}>
+      <select id={id} aria-invalid={!!error} className={`${control} ${ring(error)}`} {...(rest.value === undefined ? { defaultValue: "" } : {})} {...rest}>
         <option value="" disabled>{placeholder}</option>
         {options.map((o) => <option key={o}>{o}</option>)}
       </select>

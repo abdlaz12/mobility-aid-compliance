@@ -18,7 +18,9 @@ The two are connected only through one message format, the detection event (`con
 ```
 docs/         requirements, API contract, scenarios, decisions, UI sketches
 contracts/    detection event schema (shared by web, mock generator and ML)
-web/          Next.js web application (not yet scaffolded)
+web/          Next.js web application (backend, API and first interface)
+frontend/     Standalone interface built from the Figma Make design, with mock data (to be joined to web/)
+design/       Reference snapshot of the Figma Make design
 tools/        mock data generator
 ml/           ML work (placeholder, see ml/README.md)
 ```

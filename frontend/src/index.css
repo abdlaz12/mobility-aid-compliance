@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* Design tokens, taken from the Figma Make design (design/make-snapshot). Light is the default; dark is set by data-theme. */
+:root {
+  color-scheme: light;
+  --canvas: #f5f7f7;
+  --surface: #ffffff;
+  --surface-subtle: #f1f5f4;
+  --surface-raised: #ffffff;
+  --text: #17211f;
+  --text-muted: #5c6966;
+  --border: #d9e1df;
+  --border-strong: #aebbb7;
+  --primary: #0b695b;
+  --primary-hover: #085347;
+  --primary-soft: #e2f1ed;
+  --focus: #167dcd;
+  --info: #46534f;
+  --info-soft: #edf0ef;
+  --warning: #855504;
+  --warning-soft: #fff2d2;
+  --escalated: #a13d0a;
+  --escalated-soft: #ffeadf;
+  --emergency: #ad2831;
+  --emergency-soft: #fde8ea;
+  --ok: #15734f;
+  --ok-soft: #e3f3ec;
+  --disabled: #e4e9e7;
+  --disabled-text: #76827f;
+  --shadow: 0 1px 2px rgb(15 42 36 / 5%), 0 12px 30px rgb(15 42 36 / 6%);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #101715;
+  --surface: #18211f;
+  --surface-subtle: #202b28;
+  --surface-raised: #222d2a;
+  --text: #f1f6f4;
+  --text-muted: #aab8b4;
+  --border: #35433f;
+  --border-strong: #596963;
+  --primary: #72d0ba;
+  --primary-hover: #91dfcc;
+  --primary-soft: #173c34;
+  --focus: #67b9f6;
+  --info: #d2d9d7;
+  --info-soft: #303a37;
+  --warning: #f4c566;
+  --warning-soft: #423619;
+  --escalated: #ff9e70;
+  --escalated-soft: #48291b;
+  --emergency: #ff9aa3;
+  --emergency-soft: #492329;
+  --ok: #79d6af;
+  --ok-soft: #173b2e;
+  --disabled: #303b38;
+  --disabled-text: #87938f;
+  --shadow: 0 12px 32px rgb(0 0 0 / 20%);
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-raised: var(--surface-raised);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-focus: var(--focus);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-escalated: var(--escalated);
+  --color-escalated-soft: var(--escalated-soft);
+  --color-emergency: var(--emergency);
+  --color-emergency-soft: var(--emergency-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-disabled: var(--disabled);
+  --color-disabled-text: var(--disabled-text);
+  --shadow-card: var(--shadow);
+}
+
+@layer base {
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    background: var(--canvas);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select, textarea { font: inherit; }
+  button { cursor: pointer; }
+  /* A visible 3 px focus ring on everything that can be focused (Foundations: "Focus uses a visible 3 px ring"). */
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+  }
+}

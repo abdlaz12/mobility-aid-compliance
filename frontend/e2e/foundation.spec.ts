@@ -7,7 +7,7 @@ type Size = keyof typeof SIZES;
 async function asRole(page: Page, role: "Nurse" | "Family" | "Admin") {
   await page.goto("/login");
   await page.getByRole("button", { name: role, exact: true }).click();
-  await expect(page.getByText("Built in the next phase")).toBeVisible();
+  await expect(page.locator("main h1")).toBeVisible();
 }
 const overflows = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
 
@@ -49,7 +49,7 @@ for (const [size, viewport] of Object.entries(SIZES) as [Size, (typeof SIZES)[Si
         const signIn = await new AxeBuilder({ page }).withTags(tags).analyze();
         expect(signIn.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
         await page.getByRole("button", { name: "Admin", exact: true }).click();
-        await expect(page.getByText("Built in the next phase")).toBeVisible();
+        await expect(page.locator("main h1")).toBeVisible();
         const shell = await new AxeBuilder({ page }).withTags(tags).analyze();
         expect(shell.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
       });

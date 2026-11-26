@@ -46,3 +46,39 @@ export function StatusBadge({ status }: { status: Status }) {
     </span>
   );
 }
+
+// Delivery of a notification. The Make design reused the patient status badges here (Active, Inactive, Emergency, No data)
+// for Sent, Queued, Failed and Skipped; each state now has its own word, with a colour that means the same thing.
+export type DeliveryStatus = "sent" | "queued" | "failed" | "skipped";
+const deliveryStyle: Record<DeliveryStatus, { label: string; cls: string }> = {
+  sent: { label: "Sent", cls: "bg-ok-soft text-ok" },
+  queued: { label: "Queued", cls: "bg-info-soft text-info" },
+  failed: { label: "Failed", cls: "bg-emergency-soft text-emergency" },
+  skipped: { label: "Skipped", cls: "bg-info-soft text-info" },
+};
+export function DeliveryBadge({ status }: { status: DeliveryStatus }) {
+  const d = deliveryStyle[status];
+  return (
+    <span className={`${base} ${d.cls}`}>
+      <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
+      {d.label}
+    </span>
+  );
+}
+
+// The life of an alert: Pending (needs someone), Acknowledged (someone has it), Closed (the patient is seen with the aid again).
+export type AlertStatusName = "pending" | "acknowledged" | "closed";
+const alertStatusStyle: Record<AlertStatusName, { label: string; cls: string }> = {
+  pending: { label: "Pending", cls: "bg-warning-soft text-warning" },
+  acknowledged: { label: "Acknowledged", cls: "bg-info-soft text-info" },
+  closed: { label: "Closed", cls: "bg-ok-soft text-ok" },
+};
+export function AlertStatusBadge({ status }: { status: AlertStatusName }) {
+  const d = alertStatusStyle[status];
+  return (
+    <span className={`${base} ${d.cls}`}>
+      <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
+      {d.label}
+    </span>
+  );
+}

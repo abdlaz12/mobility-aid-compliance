@@ -2,6 +2,10 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, homeFor, useAuth } from "./auth/AuthContext";
 import { AppShell } from "./components/shell/AppShell";
 import type { Role } from "./data/types";
+import { DataProvider } from "./data/store";
+import { AlertDetail } from "./screens/nurse/AlertDetail";
+import { Dashboard } from "./screens/nurse/Dashboard";
+import { PatientPage } from "./screens/nurse/PatientPage";
 import { NotFound, Placeholder } from "./screens/Placeholder";
 import { SignIn } from "./screens/SignIn";
 
@@ -26,14 +30,15 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <DataProvider>
         <Routes>
           <Route path="/login" element={<SignIn />} />
           <Route element={<RequireAuth />}>
             <Route index element={<RoleHome />} />
             {/* Nurse flow (the admin sees the same dashboard with all patients) */}
-            <Route path="dashboard" element={<Only roles={["nurse", "admin"]}><Placeholder title="Dashboard" flow="Nurse flow" /></Only>} />
-            <Route path="alerts/:id" element={<Only roles={["nurse", "admin"]}><Placeholder title="Alert detail" flow="Nurse flow" /></Only>} />
-            <Route path="patients/:id" element={<Only roles={["nurse", "admin"]}><Placeholder title="Patient" flow="Nurse flow" /></Only>} />
+            <Route path="dashboard" element={<Only roles={["nurse", "admin"]}><Dashboard /></Only>} />
+            <Route path="alerts/:id" element={<Only roles={["nurse", "admin"]}><AlertDetail /></Only>} />
+            <Route path="patients/:id" element={<Only roles={["nurse", "admin"]}><PatientPage /></Only>} />
             {/* Family flow */}
             <Route path="home" element={<Only roles={["family"]}><Placeholder title="Home" flow="Family flow" /></Only>} />
             {/* Admin flow */}
@@ -50,6 +55,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </DataProvider>
       </AuthProvider>
     </BrowserRouter>
   );

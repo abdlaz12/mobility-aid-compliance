@@ -3,6 +3,7 @@ import { AuthProvider, homeFor, useAuth } from "./auth/AuthContext";
 import { AppShell } from "./components/shell/AppShell";
 import type { Role } from "./data/types";
 import { DataProvider } from "./data/store";
+import { FamilyHome } from "./screens/family/Home";
 import { AlertDetail } from "./screens/nurse/AlertDetail";
 import { Dashboard } from "./screens/nurse/Dashboard";
 import { PatientPage } from "./screens/nurse/PatientPage";
@@ -40,7 +41,7 @@ export default function App() {
             <Route path="alerts/:id" element={<Only roles={["nurse", "admin"]}><AlertDetail /></Only>} />
             <Route path="patients/:id" element={<Only roles={["nurse", "admin"]}><PatientPage /></Only>} />
             {/* Family flow */}
-            <Route path="home" element={<Only roles={["family"]}><Placeholder title="Home" flow="Family flow" /></Only>} />
+            <Route path="home" element={<Only roles={["family"]}><FamilyHome /></Only>} />
             {/* Admin flow */}
             <Route path="admin/patients" element={<Only roles={["admin"]}><Placeholder title="Patients" flow="Admin flow" /></Only>} />
             <Route path="admin/patients/new" element={<Only roles={["admin"]}><Placeholder title="Add patient" flow="Admin flow" /></Only>} />

@@ -1,5 +1,6 @@
 # Data and outputs: never commit participant data, point clouds or results
 data/
+!frontend/src/data/
 output/
 outputs/
 models/

@@ -11,7 +11,7 @@ Test names: *unit* = `web/src/lib/*.test.ts`, *integration* = `web/src/lib/escal
 |---|---|---|
 | FR1.1 register a patient | Done | access (patients, caregivers). Consent can be recorded at registration. |
 | FR1.2 update prescription and caregivers | Done | access (prescriptions keep history, caregivers replaced) |
-| FR1.3 enrol in the ReID gallery | Partial | Backend stores sample references, needs consent, admin only, gallery endpoint for the model service: integration, access. No screen yet. The embeddings come from the model service. |
+| FR1.3 enrol in the ReID gallery | Partial | Backend stores sample references, needs consent, admin only; the model service reads the gallery and registers samples with its API key: integration, access. The embeddings are made and kept by the model service (`ml/pipeline`, `docs/pipeline.md`); the web page for calibration upload waits on a decision. |
 | FR1.4 deactivate, delete embeddings on request | Done | access (discharge deletes samples, delete one or all, withdrawal), integration |
 | FR2.1 intake endpoint | Done | access, generator, latency |
 | FR2.2 reject malformed payloads | Done | unit (validator), access (types, lengths, size, future timestamps, non-object bodies) |
@@ -32,10 +32,10 @@ Test names: *unit* = `web/src/lib/*.test.ts`, *integration* = `web/src/lib/escal
 | FR7 activity recognition (stretch) | Not started | |
 | FR8 mobility trends (stretch) | Not started | |
 | FR9.1 real-time dashboard | Partial | Dashboard works and refreshes every 15 s. No push channel (Server-Sent Events or Socket.io undecided). |
-| FR9.2 role-based access | Done | access (the 222 access checks cover every role against every endpoint area) |
+| FR9.2 role-based access | Done | access (the 239 access checks cover every role against every endpoint area) |
 | FR9.3 weekly reports (stretch) | Not started | |
 | FR9.4 trend charts (stretch) | Not started | |
-| FR10 person segmentation | Not applicable | ML contribution, not in the web system |
+| FR10 person segmentation | Not applicable | ML contribution, not in the web system. `ml/pipeline` wires segmentation and masking to classification and ReID (16 unit tests, stand-in models) |
 
 ## Non-functional requirements
 | ID | Status | Evidence and notes |

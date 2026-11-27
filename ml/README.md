@@ -1,4 +1,8 @@
-# ML (placeholder)
+# ML
+
+- `pipeline/`: the runtime that connects segmentation, masking, aid classification and ReID to the web system. It runs now with stand-in models. See [pipeline/README.md](pipeline/README.md) and [docs/pipeline.md](../docs/pipeline.md).
+- Segmentation research (below) still lives in a separate learning workspace.
+
 
 The ML contribution is **person segmentation for 2 to 5 people in one LiDAR frame**, so the existing classification (PTv3) and ReID (ReID3D) models can run on each person.
 

@@ -1,0 +1,19 @@
+# Copy to models/manifest.yaml on the inference server and fill in. Weights are never committed (models/ is git-ignored).
+segmentation:
+  name: dbscan-baseline      # or the name of your learned model
+  version: "0.1"
+  path: segmentation/0.1     # relative to MODELS_DIR
+  sha256: ""                 # checksum of the weights file, so a changed file is noticed
+aid_classifier:
+  name: ptv3-aid
+  version: "0.3"
+  path: aid_classifier/0.3
+  sha256: ""
+  classes: [none, cane, crutches, walker, wheelchair]
+reid:
+  name: reid3d
+  version: "0.2"
+  path: reid/0.2
+  sha256: ""
+  embedding_size: 256        # confirm with Sean
+  metric: cosine

@@ -8,9 +8,11 @@ const BASE = process.argv[2] ?? "http://localhost:3000";
 const KEY = process.env.INTAKE_API_KEY ?? "dev-only-change-me";
 const PASSWORD = "demo-password-1";
 let failed = 0;
+let total = 0;
 
 function check(label, actual, expected) {
   const ok = JSON.stringify(actual) === JSON.stringify(expected);
+  total++;
   if (!ok) failed++;
   console.log(`${ok ? "PASS" : "FAIL"}  ${label}${ok ? "" : `   got ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`}`);
 }
@@ -225,6 +227,18 @@ try {
   check("the gallery needs the API key", (await keyed("/api/reid/gallery", "")).status, 401);
   check("a wrong key is refused", (await keyed("/api/reid/gallery", "not-the-key")).status, 401);
   check("a session cookie does not open the gallery", (await admin("/api/reid/gallery")).status, 401);
+  const enrolByService = (body, key = KEY) => fetch(`${BASE}/api/reid/enrol`, { method: "POST", headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify(body) }).then((r) => r.status);
+  check("the model service enrols a sample by patient code", await enrolByService({ patient_code: code, embeddingRef: "svc/1", aid: "walker", isAssisted: false }), 201);
+  check("the gallery then lists it", (await keyed("/api/reid/gallery")).body.samples.some((x) => x.embedding_ref === "svc/1"), true);
+  const svcSample = (await (await admin(reidPath)).json()).samples.find((x) => x.embeddingRef === "svc/1");
+  check("the sample appears in the admin list", Boolean(svcSample), true);
+  check("and is removed again so later checks start clean", await status(admin, `${reidPath}/${svcSample.id}`, "DELETE"), 200);
+  check("enrolling by the service needs the API key", await enrolByService({ patient_code: code, embeddingRef: "svc/2", aid: "walker" }, ""), 401);
+  check("a session cookie does not enrol", (await call(admin, "/api/reid/enrol", "POST", { patient_code: code, embeddingRef: "svc/3", aid: "walker" })).status, 401);
+  check("an unknown patient code is a 404", await enrolByService({ patient_code: "NOPE-0000", embeddingRef: "svc/4", aid: "walker" }), 404);
+  check("a missing patient code is a 400", await enrolByService({ embeddingRef: "svc/5", aid: "walker" }), 400);
+  check("a path-like reference is refused for the service too", await enrolByService({ patient_code: code, embeddingRef: "../x", aid: "walker" }), 400);
+  check("the service cannot enrol a patient without consent", await enrolByService({ patient_code: "P-0043", embeddingRef: "svc/6", aid: "cane" }) === 201 ? "accepted" : "refused", "refused");
 
   const sampleId = listed.samples[0].id;
   check("delete one sample", (await (await admin(`${reidPath}/${sampleId}`, { method: "DELETE" })).json()).deleted, 1);
@@ -256,6 +270,18 @@ try {
     return [r.status, (await (await admin(`/api/patients/${id}`)).json()).consent?.by];
   })(), [201, "patient"]);
   check("an invalid consent at registration is refused", (await call(admin, "/api/patients", "POST", { code: `D-${stamp}`, name: "X", aid: "cane", consent: "withdrawn" })).status, 400);
+
+  console.log("# who a notification went to, and rooms");
+  const detailFor = async (g) => (await g(`/api/alerts/${a42}`)).json();
+  const adminNotes = (await detailFor(admin)).notifications;
+  check("the care team sees who each notification went to", adminNotes.length > 0 && adminNotes.every((n) => typeof n.recipient?.name === "string" && ["nurse", "family"].includes(n.recipient.role)), true);
+  check("family sees that messages went out but not to whom", (await detailFor(family)).notifications.some((n) => "recipient" in n), false);
+  check("family sees no other person's name in the alert", JSON.stringify(await detailFor(family)).includes("Demo Nurse"), false);
+  const rooms = await admin("/api/rooms");
+  check("admin lists the rooms", [rooms.status, (await rooms.json()).some((r) => r.name === "R-204")], [200, true]);
+  check("a nurse may not list rooms", await status(nurse, "/api/rooms"), 403);
+  check("family may not list rooms", await status(family, "/api/rooms"), 403);
+  check("no session, no rooms", (await fetch(`${BASE}/api/rooms`)).status, 401);
 
   console.log("# history of one patient");
   const p42 = (await (await admin("/api/patients")).json()).patients.find((p) => p.code === "P-0042").id;
@@ -409,5 +435,5 @@ try {
   console.error(`Could not run the test against ${BASE}: ${e.cause?.code ?? e.message}`);
   process.exit(2);
 }
-console.log(failed ? `\n${failed} check(s) FAILED` : "\nAll access checks passed");
+console.log(failed ? `\n${failed} of ${total} check(s) FAILED` : `\nAll ${total} access checks passed`);
 process.exit(failed ? 1 : 0);

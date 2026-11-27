@@ -20,7 +20,7 @@ docs/         requirements, API contract, scenarios, decisions, UI sketches
 contracts/    detection event schema (shared by web, mock generator and ML)
 web/          Next.js web application (not yet scaffolded)
 tools/        mock data generator
-ml/           ML work (placeholder, see ml/README.md)
+ml/           ML work; ml/pipeline is the runtime from LiDAR frame to detection event
 ```
 
 ## Data policy
@@ -36,5 +36,6 @@ Sprint 0: setup and approvals. Sprint 1: core schema, mock generator, compliance
 - [API contract (draft)](docs/api.md)
 - [Database design (DBML)](docs/erd.dbml)
 - [Operating scenarios](docs/scenarios.md)
+- [Pipeline: from LiDAR frame to alert](docs/pipeline.md)
 - [Design decisions](docs/decisions.md)
 - [UI sketches](docs/ui/README.md)

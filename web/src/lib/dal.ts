@@ -119,13 +119,23 @@ export async function getAlert(user: SessionUser, id: number) {
     include: {
       patient: { select: { id: true, code: true, name: true, initials: true } },
       detection: true,
-      notifications: { select: { channel: true, status: true, attempts: true, lastAttemptAt: true } },
+      notifications: { orderBy: { id: "asc" }, select: { channel: true, status: true, attempts: true, lastAttemptAt: true, trigger: true, user: { select: { name: true, role: true } } } },
     },
   });
   if (!alert) throw new HttpError(404, "Alert not found");
   const inScope = await prisma.patient.count({ where: { id: alert.patientId, ...patientScope(user) } });
   if (!inScope || (user.role === "family" && alert.level === "info")) throw new HttpError(403, "Not allowed");
-  return alert;
+  // Who each notification went to is for the care team. Family sees that messages went out, not to whom.
+  const notifications = alert.notifications.map(({ user: recipient, ...n }) =>
+    user.role === "family" ? n : { ...n, recipient: { name: recipient.name, role: recipient.role } });
+  return { ...alert, notifications };
+}
+
+/** Rooms and hallways known to the system, for the admin's room pickers. A new room is still created by typing it (decisions, 2026-11-14). */
+export async function listRooms(user: SessionUser) {
+  assertRole(user, ["admin"]);
+  const zones = await prisma.zone.findMany({ orderBy: { zoneName: "asc" }, include: { _count: { select: { patients: true } } } });
+  return zones.map((z) => ({ name: z.zoneName, patientCount: z._count.patients }));
 }
 
 /** Low-confidence detections waiting for manual review (FR3.2). Admin and nurse only. */

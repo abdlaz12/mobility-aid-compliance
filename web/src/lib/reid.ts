@@ -81,3 +81,13 @@ export async function galleryForModelService() {
   });
   return rows.map((r) => ({ patient_code: r.patient.code, embedding_ref: r.embeddingRef, aid: r.mobilityAid?.name ?? null, assisted: r.isAssisted }));
 }
+
+/**
+ * For the model service: enrol a sample it has just created, identified by the patient CODE (the service does not know
+ * database ids). Same rules as the admin route: consent on file, admitted patient, known aid, safe reference.
+ */
+export async function enrolSampleByCode(code: string, input: SampleInput): Promise<{ ok: true; id: number } | Failure> {
+  const p = await prisma.patient.findUnique({ where: { code }, select: { id: true } });
+  if (!p) return fail(404, "Patient not found");
+  return enrolSample(p.id, input);
+}

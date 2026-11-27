@@ -46,6 +46,8 @@ const PATIENTS: PatientAdmin[] = [
 
 type Admin = {
   patients: PatientAdmin[];
+  /** Known rooms and hallways. A new one is created by typing it (docs/decisions.md, 2026-11-14). */
+  rooms: string[];
   patient: (id: number) => PatientAdmin | null;
   samples: (patientId: number) => ReidSample[];
   users: UserRow[];
@@ -58,9 +60,9 @@ type Admin = {
   addSamples: (id: number, aid: string, assisted: boolean, count: number) => Result;
   deleteSample: (id: number, sampleId: number) => void;
   deleteAllSamples: (id: number) => void;
-  withdrawConsent: (id: number, deleteSamples: boolean) => void;
+  withdrawConsent: (id: number) => void;
   recordConsent: (id: number, by: "patient" | "substitute") => void;
-  discharge: (id: number, deleteSamples: boolean) => void;
+  discharge: (id: number) => void;
   reactivate: (id: number) => void;
   addUser: (i: { name: string; email: string; role: Role; password: string }) => Result & { id?: number };
   renameUser: (id: number, name: string) => Result;
@@ -85,6 +87,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<Admin>(() => ({
     patients,
+    rooms: [...new Set([...ROOMS, ...patients.flatMap((p) => (p.room ? [p.room] : []))])].sort(),
     patient: (id) => patients.find((p) => p.id === id) ?? null,
     samples: (id) => samples[id] ?? [],
     users: people.map((u) => ({ ...u, patientCount: u.role === "admin" ? patients.length : patients.filter((p) => p.contacts.some((c) => c.id === u.id)).length })),
@@ -96,12 +99,12 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       const id = Math.max(0, ...patients.map((p) => p.id)) + 1;
       setPatients((all) => [...all, {
         id, code, name: i.name.trim(), initials: (i.initials.trim() || initialsOf(i.name)).toUpperCase(), age: i.age ? Number(i.age) : null, status: "active",
-        room: i.room || null, prescribedAid: i.aid, consent: i.consentBy ? { by: i.consentBy, at: today() } : null, reid: { sampleCount: 0, lastAddedAt: null },
+        room: i.room.trim().toUpperCase() || null, prescribedAid: i.aid, consent: i.consentBy ? { by: i.consentBy, at: today() } : null, reid: { sampleCount: 0, lastAddedAt: null },
         prescriptions: [{ aid: i.aid, validFrom: today(), validTo: null }], contacts: [],
       }]);
       return { ok: true, id };
     },
-    updatePatient: (id, d) => { patch(id, (p) => ({ ...p, name: d.name.trim(), initials: d.initials.trim().toUpperCase() || initialsOf(d.name), age: d.age ? Number(d.age) : null, room: d.room || p.room })); return { ok: true }; },
+    updatePatient: (id, d) => { patch(id, (p) => ({ ...p, name: d.name.trim(), initials: d.initials.trim().toUpperCase() || initialsOf(d.name), age: d.age ? Number(d.age) : null, room: d.room.trim().toUpperCase() || p.room })); return { ok: true }; },
     changePrescription: (id, aid) => {
       const p = patients.find((x) => x.id === id);
       if (p?.prescribedAid === aid) return { ok: false, error: "That aid is already the current prescription." };
@@ -124,10 +127,11 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     },
     deleteSample: (id, sampleId) => writeSamples(id, (samples[id] ?? []).filter((s) => s.id !== sampleId)),
     deleteAllSamples: (id) => writeSamples(id, []),
-    // Withdrawing consent stops identification and removes the biometric data, as section 7 of the spec asks.
-    withdrawConsent: (id, deleteSamples) => { patch(id, (p) => ({ ...p, consent: null })); if (deleteSamples) writeSamples(id, []); },
+    // Section 7, and the backend does the same: withdrawing consent always deletes the biometric data.
+    withdrawConsent: (id) => { patch(id, (p) => ({ ...p, consent: null })); writeSamples(id, []); },
     recordConsent: (id, by) => patch(id, (p) => ({ ...p, consent: { by, at: today() } })),
-    discharge: (id, deleteSamples) => { patch(id, (p) => ({ ...p, status: "discharged" })); if (deleteSamples) writeSamples(id, []); },
+    // The backend deletes the samples on discharge as well; consent record and history stay.
+    discharge: (id) => { patch(id, (p) => ({ ...p, status: "discharged" })); writeSamples(id, []); },
     reactivate: (id) => patch(id, (p) => ({ ...p, status: "active" })),
     addUser: (i) => {
       const email = i.email.trim().toLowerCase();

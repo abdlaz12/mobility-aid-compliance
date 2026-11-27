@@ -19,6 +19,11 @@ type Auth = {
   signIn: (email: string, password: string) => SignInResult;
   signInAs: (role: Role) => void;
   signOut: () => void;
+  /** Mock of POST /api/account/password: 5 wrong current passwords lock it, as in the backend (429). */
+  changePassword: (current: string, next: string) => "ok" | "wrong" | "locked" | "weak";
+  pushoverKey: string;
+  /** Mock of PUT /api/account/pushover: 30 letters and digits, or empty to clear. */
+  savePushoverKey: (key: string) => boolean;
 };
 
 const Ctx = createContext<Auth | null>(null);
@@ -36,6 +41,9 @@ function load(): SessionUser | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(load);
   const failures = useRef(new Map<string, number>());
+  const passwords = useRef(new Map<number, string>());
+  const pwFailures = useRef(new Map<number, number>());
+  const [keys, setKeys] = useState<Record<number, string>>({});
 
   const start = useCallback((u: SessionUser) => {
     try { sessionStorage.setItem(KEY, JSON.stringify(u)); } catch { /* storage may be unavailable */ }
@@ -49,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // A locked account refuses even the right password, so a lock never reveals whether a guess was right.
       if ((failures.current.get(key) ?? 0) >= MAX_FAILURES) return { ok: false, reason: "locked" };
       const account = ACCOUNTS.find((a) => a.email === key);
-      if (!account || password !== DEMO_PASSWORD) {
+      if (!account || password !== (passwords.current.get(account.id) ?? DEMO_PASSWORD)) {
         failures.current.set(key, (failures.current.get(key) ?? 0) + 1); // unknown emails count too
         return { ok: false, reason: "wrong" };
       }
@@ -64,7 +72,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try { sessionStorage.removeItem(KEY); } catch { /* ignore */ }
       setUser(null);
     },
-  }), [user, start]);
+    changePassword(current, next) {
+      if (!user) return "wrong";
+      if ((pwFailures.current.get(user.id) ?? 0) >= MAX_FAILURES) return "locked";
+      if (current !== (passwords.current.get(user.id) ?? DEMO_PASSWORD)) {
+        pwFailures.current.set(user.id, (pwFailures.current.get(user.id) ?? 0) + 1);
+        return "wrong";
+      }
+      if (next.length < 10) return "weak";
+      pwFailures.current.delete(user.id);
+      passwords.current.set(user.id, next);
+      return "ok";
+    },
+    pushoverKey: user ? (keys[user.id] ?? "") : "",
+    savePushoverKey(key) {
+      if (!user || !(key === "" || /^[A-Za-z0-9]{30}$/.test(key))) return false;
+      setKeys((k) => ({ ...k, [user.id]: key }));
+      return true;
+    },
+  }), [user, start, keys]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

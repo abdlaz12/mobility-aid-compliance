@@ -9,11 +9,12 @@ import { AdminPatients } from "./screens/admin/Patients";
 import { AdminSettings } from "./screens/admin/Settings";
 import { AddUser, AdminUsers, UserDetail } from "./screens/admin/Users";
 import { DataProvider } from "./data/store";
+import { Account } from "./screens/Account";
 import { FamilyHome } from "./screens/family/Home";
 import { AlertDetail } from "./screens/nurse/AlertDetail";
 import { Dashboard } from "./screens/nurse/Dashboard";
 import { PatientPage } from "./screens/nurse/PatientPage";
-import { NotFound, Placeholder } from "./screens/Placeholder";
+import { NotFound } from "./screens/Placeholder";
 import { SignIn } from "./screens/SignIn";
 
 function RequireAuth() {
@@ -58,7 +59,7 @@ export default function App() {
             <Route path="admin/users/:id" element={<Only roles={["admin"]}><UserDetail /></Only>} />
             <Route path="admin/settings" element={<Only roles={["admin"]}><AdminSettings /></Only>} />
             {/* Everyone */}
-            <Route path="account" element={<Placeholder title="Account" flow="Account" />} />
+            <Route path="account" element={<Account />} />
             <Route path="*" element={<NotFound />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />

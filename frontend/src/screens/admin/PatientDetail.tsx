@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Button, Card, ConfirmDialog, EmptyState, Icon, Input, Notice, SectionHeader, Select, StatusBadge, Checkbox } from "../../components/ui";
-import { AIDS, ROOMS, useAdmin } from "../../data/admin";
+import { AIDS, useAdmin } from "../../data/admin";
 import type { PatientAdmin } from "../../data/types";
 import { aidName } from "../../lib/format";
 import { NotFound } from "../Placeholder";
@@ -18,11 +18,10 @@ export function PatientDetail() {
   const patient = /^\d+$/.test(id ?? "") ? admin.patient(Number(id)) : null;
   const [tab, setTab] = useState<Tab>("Details");
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [alsoDelete, setAlsoDelete] = useState(false);
   const [flash, setFlash] = useState<{ tone: "success" | "warning"; text: string } | null>(null);
   if (!patient) return <NotFound />;
   const samples = admin.samples(patient.id);
-  const close = () => { setDialog(null); setAlsoDelete(false); };
+  const close = () => setDialog(null);
   const done = (text: string) => { setFlash({ tone: "success", text }); close(); };
 
   return (
@@ -88,7 +87,7 @@ export function PatientDetail() {
             <div className="grid gap-4">
               <SectionHeader title="Danger zone" description="These changes affect monitoring and alert delivery." />
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4">
-                <div className="max-w-prose"><h3 className="font-bold">Discharge patient</h3><p className="text-sm text-muted">Keeps the patient’s history, stops monitoring alerts, and offers to delete ReID embeddings.</p></div>
+                <div className="max-w-prose"><h3 className="font-bold">Discharge patient</h3><p className="text-sm text-muted">Keeps the patient’s history, stops monitoring alerts, and deletes all ReID embeddings.</p></div>
                 <Button variant="danger" disabled={patient.status === "discharged"} onClick={() => setDialog("discharge")}>Discharge patient</Button>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4">
@@ -107,17 +106,13 @@ export function PatientDetail() {
         description="This permanently deletes one calibration sample. Other samples are kept."
         onConfirm={() => { if (typeof dialog === "object" && dialog) admin.deleteSample(patient.id, dialog.sample); done("Sample deleted."); }} />
       <ConfirmDialog open={dialog === "withdraw"} title="Withdraw consent?" confirmLabel="Withdraw consent" onCancel={close}
-        description={`Monitoring and identification of ${patient.name} will stop until consent is recorded again. This cannot be undone by the system.`}
-        onConfirm={() => { admin.withdrawConsent(patient.id, alsoDelete); done(alsoDelete ? "Consent withdrawn and embeddings deleted." : "Consent withdrawn."); }}>
-        <Checkbox label="Also permanently delete all ReID embeddings" checked={alsoDelete} onChange={(e) => setAlsoDelete(e.target.checked)} />
-      </ConfirmDialog>
+        description={`Monitoring and identification of ${patient.name} will stop, and every ReID embedding and calibration sample is permanently deleted. Consent has to be recorded again, and new samples enrolled, before identification can resume.`}
+        onConfirm={() => { admin.withdrawConsent(patient.id); done("Consent withdrawn and embeddings deleted."); }} />
       <ConfirmDialog open={dialog === "discharge"} title={`Discharge ${patient.name}?`} confirmLabel="Discharge patient" onCancel={close}
-        description="The patient’s history will be kept, monitoring and new alerts will stop, and assigned caregivers will retain access to past alerts."
-        onConfirm={() => { admin.discharge(patient.id, alsoDelete); done(alsoDelete ? "Patient discharged and embeddings deleted." : "Patient discharged."); }}>
-        <Checkbox label="Also permanently delete all ReID embeddings" checked={alsoDelete} onChange={(e) => setAlsoDelete(e.target.checked)} />
-      </ConfirmDialog>
+        description="The patient’s history and consent record are kept, monitoring and new alerts stop, and assigned caregivers keep access to past alerts. All ReID embeddings and calibration samples are permanently deleted."
+        onConfirm={() => { admin.discharge(patient.id); done("Patient discharged and embeddings deleted."); }} />
       <ConfirmDialog open={dialog === "reactivate"} title={`Reactivate ${patient.name}?`} confirmLabel="Reactivate patient" danger={false} onCancel={close}
-        description="Monitoring and alerts will restart immediately using the current room, prescribed aid, caregiver assignments, and any retained ReID embeddings."
+        description="Monitoring and alerts will restart immediately using the current room, prescribed aid and caregiver assignments. Identification needs new calibration samples, because discharge deleted the old ones."
         onConfirm={() => { admin.reactivate(patient.id); done("Patient reactivated."); }} />
     </>
   );
@@ -142,7 +137,10 @@ function DetailsTab({ patient: p, onSaved }: { patient: PatientAdmin; onSaved: (
         <Input name="name" label="Full name" defaultValue={p.name} error={err.name} />
         <Input name="initials" label="Initials (optional)" defaultValue={p.initials} maxLength={4} />
         <Input name="age" label="Age (optional)" type="number" defaultValue={p.age ?? ""} />
-        <Select name="room" label="Room" defaultValue={p.room ?? ""} options={[...new Set([p.room, ...ROOMS].filter((r): r is string => !!r))]} hint={`Current room: ${p.room ?? "none"}`} />
+        <div>
+          <Input name="room" label="Room" list="known-rooms" defaultValue={p.room ?? ""} autoComplete="off" hint={`Current room: ${p.room ?? "none"}. Type a new room to create it.`} />
+          <datalist id="known-rooms">{admin.rooms.map((r) => <option key={r} value={r} />)}</datalist>
+        </div>
       </div>
       <div className="flex justify-end"><Button type="submit">Save changes</Button></div>
     </form>

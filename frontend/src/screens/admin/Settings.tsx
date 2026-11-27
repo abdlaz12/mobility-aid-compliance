@@ -17,7 +17,8 @@ export function AdminSettings() {
   const num = (v: string) => Number(v);
   const errors: Partial<Record<keyof Draft, string>> = {};
   for (const k of ["identity", "aid"] as const) if (!(num(draft[k]) >= 0 && num(draft[k]) <= 1) || draft[k] === "") errors[k] = "Enter a number from 0 to 1.";
-  for (const k of ["cooldown", "ack"] as const) if (!Number.isInteger(num(draft[k])) || num(draft[k]) < 1 || num(draft[k]) > 1440) errors[k] = "Enter whole minutes from 1 to 1440.";
+  // Same limits as the backend: cooldown 0 to 1440 minutes (0 means no cooldown), acknowledgement timeout 1 to 1440.
+  for (const [k, min] of [["cooldown", 0], ["ack", 1]] as const) if (draft[k] === "" || !Number.isInteger(num(draft[k])) || num(draft[k]) < min || num(draft[k]) > 1440) errors[k] = `Enter whole minutes from ${min} to 1440.`;
   const valid = Object.keys(errors).length === 0;
 
   const field = (k: keyof Draft, label: string, extra: Record<string, string>, note: string) => {

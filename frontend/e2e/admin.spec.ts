@@ -34,12 +34,13 @@ test.describe("patients", () => {
     await login(page);
     await nav(page, "Patients");
     await page.getByRole("button", { name: "Add patient" }).click();
+    await expect(page.locator("main h1")).toHaveText("Add patient");
     await page.getByRole("button", { name: "Add patient" }).click();
     await expect(page.getByText("Enter a patient code.")).toBeVisible();
     await expect(page.getByText("Record who gave consent.")).toBeVisible();
     await page.getByLabel("Patient code").fill("P-0042");
     await page.getByLabel("Full name").fill("New Person");
-    await page.getByLabel("Room").selectOption("R-201");
+    await page.getByLabel("Room").fill("R-201");
     await page.getByLabel("Prescribed aid").selectOption("Cane");
     await page.getByLabel("Patient", { exact: true }).check();
     await page.getByRole("button", { name: "Add patient" }).click();
@@ -60,7 +61,6 @@ test.describe("patients", () => {
     await expect(page.getByText("Sample 03")).toHaveCount(0);
     await expect(page.getByText("Sample 02")).toBeVisible();
     await page.getByRole("button", { name: "Withdraw consent" }).click();
-    await page.getByRole("dialog").getByLabel("Also permanently delete all ReID embeddings").check();
     await page.getByRole("dialog").getByRole("button", { name: "Withdraw consent" }).click();
     await expect(page.getByText("No consent is recorded", { exact: false })).toBeVisible();
     await expect(page.getByText("No calibration samples")).toBeVisible();
